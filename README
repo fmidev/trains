@@ -1,0 +1,3 @@
+docker run --rm -v  ~/Dropbox/tyot/trains:/a tervo/ml:cpu python -u ml-feature-db/db/create_db.py --force --logging_level DEBUG
+docker run --rm -v  ~/Dropbox/tyot/trains:/a tervo/ml:cpu python -u ml-feature-db/api/put_from_csv.py --logging_level DEBUG --filename data/a_b_nayte.csv --add_locations
+docker run --rm -v  ~/Dropbox/tyot/trains:/a tervo/ml:cpu python -u ml-feature-db/api/get_observations.py --dataset 'tehanu-1-2' --producer opendata --starttime 2018-01-01T00:00:00 --endtime 2018-01-11T00:00:00 --timestep 60 --logging_level DEBUG --replace
