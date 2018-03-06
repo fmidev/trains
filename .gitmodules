@@ -1,3 +1,6 @@
 [submodule "bin/ml-feature-db"]
 	path = bin/ml-feature-db
 	url = https://github.com/fmidev/ml-feature-db.git
+[submodule "bin/ml_feature_db"]
+	path = bin/ml_feature_db
+	url = https://github.com/fmidev/ml_feature_db.git
