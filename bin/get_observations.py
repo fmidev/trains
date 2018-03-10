@@ -35,13 +35,20 @@ def main():
     params = io.read_parameters('cnf/parameters.txt')
 
     # Get locations and create coordinate list for SmartMet
-    locations = a.get_locations_by_dataset(options.dataset)
     latlons = []
     ids = dict()
-    for loc in locations:
-        latlon = str(loc[3])+','+str(loc[2])
-        latlons.append(latlon)
-        ids[latlon] = loc[0]
+    if options.locations is not None:
+        locations = options.locations.split(';')
+        for loc in locations:
+            id, latlon = loc.split(':')
+            latlons.append(latlon)
+            ids[latlon] = id
+    else:
+        locations = a.get_locations_by_dataset(options.dataset)
+        for loc in locations:
+            latlon = str(loc[3])+','+str(loc[2])
+            latlons.append(latlon)
+            ids[latlon] = loc[0]
             
     # Create url and get data
     url = 'http://smartmet.fmi.fi/timeseries?format=json&producer={producer}&timeformat=epoch&latlons={latlons}&timestep={timestep}&starttime={starttime}&endtime={endtime}&param={params}'.format(latlons=','.join(latlons), timestep=options.timestep, params=','.join(params), starttime=options.starttime, endtime=options.endtime, producer=options.producer)
@@ -133,6 +140,10 @@ if __name__=='__main__':
                         type=str,
                         default='opendata',
                         help='Data producer')
+    parser.add_argument('--locations',
+                        type=str,
+                        default=None,
+                        help='Locations in format [id:lat,lon;id:lat,lon...], default None')
     parser.add_argument('--replace',
                         action='store_true',
                         help='If set, old dataset is removed first, default=False')
