@@ -16,6 +16,10 @@ import lib.io
 
 def pointtime_in_metadata(metadata, location_id, time):
     for row in metadata:
+        #print('Time in row: {}'.format(int(row[0])))
+        #print('Asked time: {}'.format(int(time)))
+        #print('Location in row: {}'.format(int(row[1])))
+        #print('Asked locations: {}'.format(int(location_id)))
         if int(row[0]) == int(time) and int(row[1]) == int(location_id):
             return True
     return False
@@ -49,7 +53,7 @@ def main():
             latlon = str(loc[3])+','+str(loc[2])
             latlons.append(latlon)
             ids[latlon] = loc[0]
-            
+
     # Create url and get data
     url = 'http://smartmet.fmi.fi/timeseries?format=json&producer={producer}&timeformat=epoch&latlons={latlons}&timestep={timestep}&starttime={starttime}&endtime={endtime}&param={params}'.format(latlons=','.join(latlons), timestep=options.timestep, params=','.join(params), starttime=options.starttime, endtime=options.endtime, producer=options.producer)
 
@@ -71,6 +75,8 @@ def main():
                 row.append(el[param])
         result.append(row)
     result = np.array(result)
+    places = result[:,1]
+    result = np.delete(result, 1, 1).astype(np.float)
 
     # Result by time
     logging.debug('Arranging by time...')
@@ -79,26 +85,40 @@ def main():
     # Go through data, remove unnecessary rows and convert coordinates
     # back to location ids
     logging.info('Decimating unnecessary data...')
+    logging.debug('Reading labels data...')
     labels_metadata, _, __ = a.get_rows(options.dataset, rowtype='label')
     
     metadata = []
     data = []
     removed = 0
     count = 0
-    for row in result:        
-        if pointtime_in_metadata(labels_metadata, ids[row[1]], row[0]):
-            metadata.append([int(row[0]), ids[row[1]]])
-            data.append(row[2:])
+    lm = np.array(labels_metadata)
+
+    logging.debug("Length for original data: {}".format(len(result)))
+    
+    # Masks don't work because result and labels are not necessary in the same order
+    
+    #mask = np.ones_like(result)*(places[:]==result[:,1])
+    #result_time = np.ma.MaskedArray(result, mask)
+    #logging.debug("Length of dataset after masking places: {}".format(len(result_time)))
+
+    #mask = np.ones_like(result_time)*(lm[:,0]==result_time[:,0])
+    #logging.debug("Length of dataset after masking times: {}".format(len(np.ma.MaskedArray(result_time, mask))))
+
+    for row in result:
+        if pointtime_in_metadata(labels_metadata, ids[places[count]], row[0]):
+            metadata.append([int(row[0]), ids[places[count]]])
+            data.append(row[1:])
         else:
             removed += 1
+        
         count += 1
         if count%500 == 0:
-            logging.info('Handled {}/{} rows...'.format(count, len(result)))
+            logging.info('Handled {}/{} rows ({} rows removed)...'.format(count, len(result), removed))
         
     logging.info('Removed {} rows from data'.format(removed))
-    
+
     # Save to database        
-    # data = result[:,2:]
     header = params[2:]
     data = np.array(data)
     
