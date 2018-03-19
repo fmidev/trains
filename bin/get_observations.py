@@ -51,7 +51,7 @@ def main():
             ids[latlon] = loc[0]
 
     # Create url and get data
-    url = 'http://smartmet.fmi.fi/timeseries?format=json&producer={producer}&timeformat=epoch&latlons={latlons}&timestep={timestep}&starttime={starttime}&endtime={endtime}&param={params}'.format(latlons=','.join(latlons), timestep=options.timestep, params=','.join(params), starttime=options.starttime, endtime=options.endtime, producer=options.producer)
+    url = 'http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?format=json&producer={producer}&timeformat=epoch&latlons={latlons}&timestep={timestep}&starttime={starttime}&endtime={endtime}&param={params}'.format(latlons=','.join(latlons), timestep=options.timestep, params=','.join(params), starttime=options.starttime, endtime=options.endtime, producer=options.producer)
 
     logging.info('Loading data from SmartMet Server...')
     logging.debug('Using url: {}'.format(url))
