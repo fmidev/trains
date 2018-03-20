@@ -69,6 +69,11 @@ def main():
     Put labels from csv file to db
     """
 
+    train_types = {'K': 0,
+                   'L': 1,
+                   'T': 2,
+                   'M': 3}
+    
     a = mlfb.mlfb()
     X = read_data(options.filename, delimiter=',', remove='"')    
     stations = get_stations(filename='data/stations.json')
@@ -85,7 +90,7 @@ def main():
         logging.info('Removing old dataset...')
         a.remove_dataset(options.dataset, type='label')
     
-    header = ['late_minutes', 'total_late_minutes']
+    header = ['late_minutes', 'total_late_minutes', 'train_type', 'train_count']
     data = []
     metadata = []
     
@@ -93,12 +98,14 @@ def main():
         timestr = row[0]+'T'+row[1]
         t = datetime.strptime(timestr, "%Y-%m-%dT%H") + timedelta(hours=1)
         loc = row[3]
-        late_minutes = int(row[6])
-        total_late_minutes = int(row[4])
+        train_type = train_types[row[4]]
+        late_minutes = int(row[7])
+        total_late_minutes = int(row[5])
+        train_count = int(row[9])
         
         try:
             metadata.append([t, find_id(ids, loc)])
-            data.append([late_minutes, total_late_minutes])
+            data.append([late_minutes, total_late_minutes, train_type, train_count])
         except:
             logging.error('No location data for {}'.format(loc))
             continue
