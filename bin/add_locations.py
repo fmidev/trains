@@ -10,7 +10,7 @@ import urllib.request, json
 import requests
 import codecs
 
-from ml_feature_db.api.lib import mlfb
+from mlfdb import mlfdb
 
 def get_stations(filename=None):
     """
@@ -48,7 +48,7 @@ def main():
     Put labels from csv file to db
     """
 
-    a = mlfb.mlfb()
+    a = mlfdb.mlfdb()
     stations = get_stations(filename=options.filename)
 
     locations = []

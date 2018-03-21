@@ -11,7 +11,7 @@ import urllib.request, json
 import requests
 import codecs
 
-from ml_feature_db.api.lib import mlfb
+from mlfdb import mlfdb
 import lib.io
 
 def pointtime_in_metadata(metadata, location_id, time):
@@ -29,7 +29,7 @@ def main():
     locations. I.e. timestep is assumed to be constant between start
     and end time. 
     """
-    a = mlfb.mlfb()
+    a = mlfdb.mlfdb()
     io = lib.io.IO()    
 
     params = io.read_parameters('cnf/parameters.txt')
