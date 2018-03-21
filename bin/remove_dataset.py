@@ -10,7 +10,7 @@ import urllib.request, json
 import requests
 import codecs
 
-from ml_feature_db.api.lib import mlfb
+from mlfdb import mlfdb
 
 def read_data(filename, data_type=None, delimiter=';', skip_cols=0, skip_rows=1, remove=None):
     """ 
@@ -69,12 +69,12 @@ def main():
     Put labels from csv file to db
     """
 
-    a = mlfb.mlfb()
+    a = mlfdb.mlfdb()
 
     if options.labels:
         logging.info('Removing labels from {}...'.format(options.dataset))
         a.remove_dataset(options.dataset, type='label')
-    if options.features
+    if options.features:
         logging.info('Removing features from {}...'.format(options.dataset))
         a.remove_dataset(options.dataset, type='feature')
     
