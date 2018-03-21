@@ -10,7 +10,7 @@ import urllib.request, json
 import requests
 import codecs
 
-from ml_feature_db.api.lib import mlfb
+from mlfdb import mlfdb
 
 def read_data(filename, data_type=None, delimiter=';', skip_cols=0, skip_rows=1, remove=None):
     """ 
@@ -74,7 +74,7 @@ def main():
                    'T': 2,
                    'M': 3}
     
-    a = mlfb.mlfb()
+    a = mlfdb.mlfdb()
     X = read_data(options.filename, delimiter=',', remove='"')    
     stations = get_stations(filename='data/stations.json')
 
