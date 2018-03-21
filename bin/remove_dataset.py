@@ -69,7 +69,7 @@ def main():
     Put labels from csv file to db
     """
 
-    a = mlfdb.mlfdb()
+    a = mlfdb.mlfdb(config_filename=options.db_config_file)
 
     if options.labels:
         logging.info('Removing labels from {}...'.format(options.dataset))
@@ -89,6 +89,10 @@ if __name__=='__main__':
     parser.add_argument('--features',
                         action='store_true',
                         help='If set, features are removed')
+    parser.add_argument('--db_config_file',
+                        type=str,
+                        default=None,
+                        help='GS address for db config file (if none, ~/.mlfdbconfig is used)')
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',
