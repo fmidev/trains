@@ -7,7 +7,9 @@
 
 sudo apt-get update
 sudo apt-get install -y wget libtiff5-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev python3 python-gdal python3-pip postgresql libpq-dev postgresql-client postgresql-client-common
-sudo pip3 install unicodecsv pyproj requests psycopg2-binary numpy google-cloud
+sudo pip3 install unicodecsv pyproj requests psycopg2-binary numpy google-cloud scipy scikit-learn PySocks
+sudo pip3 install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.6.0-cp34-cp34m-linux_x86_64.whl
+sudo pip3 install keras boto3
 
 echo "export PYSPARK_PYTHON=python3" | sudo tee -a  /etc/profile.d/spark_config.sh  /etc/*bashrc /usr/lib/spark/conf/spark-env.sh
 echo "export PYTHONHASHSEED=0" | sudo tee -a /etc/profile.d/spark_config.sh /etc/*bashrc /usr/lib/spark/conf/spark-env.sh
