@@ -11,8 +11,11 @@ import requests
 import codecs
 
 from mlfdb import mlfdb
+import io
 
-def read_data(filename, data_type=None, delimiter=';', skip_cols=0, skip_rows=1, remove=None):
+def read_data(filename, data_type=None,
+              delimiter=';', skip_cols=0,
+              skip_rows=1, remove=None):
     """ 
     Read data from csv file
     """
@@ -69,14 +72,16 @@ def main():
     Put labels from csv file to db
     """
 
+    
     train_types = {'K': 0,
                    'L': 1,
                    'T': 2,
                    'M': 3}
-    
-    a = mlfdb.mlfdb()
-    X = read_data(options.filename, delimiter=',', remove='"')    
-    stations = get_stations(filename='data/stations.json')
+
+    io = io.IO()
+    a = mlfdb.mlfdb(config_filename=options.db_config_file)
+    X = io.read_data(options.filename, delimiter=',', remove='"')    
+    stations = io.get_stations(filename='data/stations.json')
 
     locations = []
     names = []
@@ -136,6 +141,11 @@ if __name__=='__main__':
                         type=str,
                         default='INFO',
                         help='options: DEBUG,INFO,WARNING,ERROR,CRITICAL')
+    parser.add_argument('--db_config_file',
+                        type=str,
+                        default=None,
+                        help='GS address for db config file (if none, ~/.mlfdbconfig is used)')
+
 
     options = parser.parse_args()
     
