@@ -10,94 +10,31 @@ import urllib.request, json
 import requests
 import codecs
 
+import pyspark
+
 from mlfdb import mlfdb
 from lib import io as oi
 
-def read_data(filename, data_type=None,
-              delimiter=';', skip_cols=0,
-              skip_rows=1, remove=None):
-    """ 
-    Read data from csv file
+
+def process_file(filename, dataset, ids, a, io, row_prefix=0):
     """
-    X = []
-    with open(filename, encoding='utf-8') as f:
-        lines = f.read().splitlines()
-
-    for line in lines[skip_rows:]:
-        l = line.split(delimiter)[skip_cols:]
-        if remove is not None:
-            nl = []
-            for e in l:
-                nl.append(e.replace(remove, ''))
-            l = nl
-        if data_type is not None:
-            l = list(map(data_type, l))
-        X.append(l)
-
-    return X
-
-def get_stations(filename=None):
-    """
-    Get railway stations from digitrafic
-    """
-    if filename is None:
-        url = "https://rata.digitraffic.fi/api/v1/metadata/stations"
-
-        with urllib.request.urlopen(url) as u:
-            data = json.loads(u.read().decode("utf-8"))
-    else:
-        with open(filename) as f:
-            data = json.load(f)
-
-    stations = dict()
-       
-    for s in data:
-        latlon = {'lat': s['latitude'], 'lon': s['longitude']}
-        stations[s['stationShortCode'].encode('utf-8').decode()] = latlon
-
-    return stations
-
-def find_id(locations, name):
-    """
-    Find id from (id, name) tuple list
-    """
-    for loc in locations:
-        if name == loc[1]:
-            return loc[0]
-
-    return None
-    
-def main():
-    """
-    Put labels from csv file to db
+    Process file content and save it to database
     """
 
+    logging.info('Processing file {}...'.format(filename))
     
     train_types = {'K': 0,
                    'L': 1,
                    'T': 2,
                    'M': 3}
 
-    io = oi.IO()
-    a = mlfdb.mlfdb(config_filename=options.db_config_file)
-    X = io.read_data(options.filename, delimiter=',', remove='"')    
-    stations = io.get_train_stations(filename='data/stations.json')
-
-    locations = []
-    names = []
-    for name, latlon in stations.items():
-        locations.append([name, latlon['lat'], latlon['lon']])        
-        names.append(name)
-
-    ids = a.get_locations_by_name(names)    
-
-    if options.replace:
-        logging.info('Removing old dataset...')
-        a.remove_dataset(options.dataset, type='label')
-    
+    # Get data
+    filename = io.get_file_to_process(filename)
+    X = io.read_data(filename, delimiter=',', remove='"')
     header = ['late_minutes', 'total_late_minutes', 'train_type', 'train_count']
     data = []
     metadata = []
+    errors = []
     
     for row in X:
         timestr = row[0]+'T'+row[1]
@@ -109,12 +46,15 @@ def main():
         train_count = int(row[9])
         
         try:
-            metadata.append([t, find_id(ids, loc)])
+            metadata.append([t, io.find_id(ids, loc)])
             data.append([late_minutes, total_late_minutes, train_type, train_count])
-        except:
-            logging.error('No location data for {}'.format(loc))
+        except Exception as e:
+            errors.append(loc)
             continue
 
+    logging.error('Location not found for locations: {}'.format(','.join(errors)))
+    
+    # Save data
     start = 0
     end = 0
     batch_size = 100
@@ -126,14 +66,69 @@ def main():
             end = start + batch_size
             
         logging.info('Insert rows {}-{}/{}...'.format(start, end, len(data)-1))
-        row_offset += a.add_rows('label', header, np.array(data[start:end]), metadata[start:end], dataset=options.dataset, row_offset=row_offset)        
+        row_offset += a.add_rows('label', header, np.array(data[start:end]), metadata[start:end], dataset=dataset, row_offset=row_offset)        
         start = end
+
+    return end
+    
+def main():
+    """
+    Put labels from csv file to db
+    """
+    
+    io = oi.IO(gs_bucket=options.gs_bucket)
+    a = mlfdb.mlfdb(config_filename=options.db_config_file)
+    sc = pyspark.SparkContext("local")
+
+    # Remove old dataset
+    if options.replace:
+        logging.info('Removing old dataset...')
+        a.remove_dataset(options.dataset, type='label')
+
+    # Get stations
+    stations = io.get_train_stations(filename='data/stations.json')
+
+    locations = []
+    names = []
+    for name, latlon in stations.items():
+        names.append(name)
+
+    ids = a.get_locations_by_name(names)    
+
+    # Process files
+    count = sc.accumulator(0)
+    if options.filename is not None:
+        files = [options.filename]
+    else:
+        files = io.get_files_to_process('data', 'csv')
+
+    logging.info('Processing files: {}'.format(','.join(files)))
+
+    sc.parallelize(files).foreach(lambda filename: count.add(process_file(filename, options.dataset, ids, a, io)))
+    
+    logging.info('Added {} samples to db'.format(count.value)) 
+
+    #process_file(options.filename, options.dataset, ids, a, io)
     
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--filename', type=str, default=None, help='Dataset path and filename')
-    parser.add_argument('--dataset', type=str, default=None, help='Dataset name')
+    parser.add_argument('--filename',
+                        type=str,
+                        default=None,
+                        help='Dataset path and filename')
+    parser.add_argument('--gs_bucket',
+                        type=str,
+                        default=None,
+                        help='Google Cloud bucket name to use for downloading data')
+    parser.add_argument('--path',
+                        type=str,
+                        default=None,
+                        help='Path to find files to process. Use filename or bath, not both. If gs_bucket is given, Google Cloud bucket is used.')
+    parser.add_argument('--dataset',
+                        type=str,
+                        default=None,
+                        help='Dataset name')
     parser.add_argument('--replace',
                         action='store_true',
                         help='If set, old rows from the dataset are removed')
