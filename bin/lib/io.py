@@ -5,6 +5,7 @@ from os import listdir
 from os.path import isfile, join
 from sklearn.externals import joblib
 from keras.models import Model, model_from_yaml
+from google.cloud import storage
 import boto3
 import random
 import pickle
@@ -18,22 +19,17 @@ class IO:
     bucket = ''
     client = ''
     
-    def __init__(self, s3_bucket=False, gs_bucket=False):
+    def __init__(self, s3_bucket=None, gs_bucket=None):
 
-        if s3_bucket != False:
+        if s3_bucket is not None:
             self.bucket_name = s3_bucket
             self.s3 = True
             self.client = boto3.client('s3')
             resource = boto3.resource('s3')
             self.bucket = resource.Bucket(self.bucket_name)
-        elif gs_bucket != False:
+        elif gs_bucket is not None:
             self.bucket_name = gs_bucket
             self.gs = True
-            # TODO continue
-    
-
-
-            
 
     #
     # GENERAL
@@ -186,12 +182,67 @@ class IO:
         
         return model, history
 
+    def get_files_to_process(self, path, suffix='csv', force_local=False):
+        """
+        List files in given directory location. If google cloud bucket is
+        given, use that. Else, use filesystem. NOTE S3 not implemented.
+        
+        path : string
+               path to find for files
+        suffix : string
+                 file suffix
+        
+        return list of files
+        """
 
+        if self.s3 and not force_local:
+            raise ValueError('S3 not implemented')
+        if self.gs and not force_local:
+            client = storage.Client()
+            bucket = client.get_bucket(self.bucket_name)
+
+            files = [o.name for o in bucket.list_blobs()
+                     if o.name.startswith(path) and o.name.endswith(suffix)]
+            
+        else:
+            files = []
+            for file in os.listdir(path):
+                if file.endswith(suffix):
+                    files.append(os.path.join(dir, file))
+            
+        return files
+        
+    def get_file_to_process(self, filename, force_local=False):
+        """
+        Download file from bucket for processing. If bucket is not
+        set, local file is returned
+
+        filename : String
+                   filename with full path
+        force_local : boolean
+                      ignore buckets (default False)
+        
+        return tmp filename 
+        """
+
+        if self.s3 and not force_local:
+            raise ValueError('S3 not implemented')
+        if self.gs and not force_local:
+            client = storage.Client()
+            bucket = client.get_bucket(self.bucket_name)
+            tmp = tempfile.NamedTemporaryFile()
+            blob = storage.Blob(filename, bucket)
+            blob.download_to_filename(str(tmp))
+        else:
+            return filename
+
+        return str(tmp)
     
     #
     # TRAINS
     #
     def get_train_stations(self, filename=None):
+
         """
         Get railway stations from file or db digitrafic
         """
@@ -217,10 +268,10 @@ class IO:
         Find id from (id, name) tuple list
         """
         for loc in locations:
-            if name == loc[1]:
+            if str(name) == str(loc[1]):
                 return loc[0]
 
-        return None    
+        raise KeyError('Id for name {} not found'.format(name))
     
 
     #
