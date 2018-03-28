@@ -34,6 +34,11 @@ class IO:
     #
     # GENERAL
     #
+    def chunks(self, l, n):
+        """Yield successive n-sized chunks from l."""
+        for i in range(0, len(l), n):
+            yield l[i:i + n]
+    
     def read_data(self, xfilename, yfilename=None,
                   data_type=None, delimiter=';',
                   skip_cols=0, skip_rows=1,
