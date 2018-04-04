@@ -45,7 +45,7 @@ services:
 #############
   get_observations:
     image: tervo/ml:cpu
-    command: python -u bin/get_observations_2.py --dataset ${DATASET:-trains-10d-sample} --producer opendata --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --timestep 10 --job_count ${JOBS:-10} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/get_observations.py --dataset ${DATASET:-trains-10d-sample} --producer opendata --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --job_count ${JOBS:-10} --logging_level ${LOGGING:-INFO}
     volumes:
       - ~:/root:ro
       - ~/trains:/a

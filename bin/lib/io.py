@@ -12,6 +12,7 @@ import pickle
 import json
 import logging
 import datetime as dt
+import pandas as pd
 
 class IO:
 
@@ -302,9 +303,10 @@ class IO:
                 return loc[0]
 
         raise KeyError('Id for name {} not found'.format(name))
-    
+
     def filter_labels(self, labels_metadata, labels,
-                      features_metadata, features, invert=False):
+                      features_metadata, features,
+                      invert=False, uniq=False):
         """
         Return labels which have corresponding features
         
@@ -321,7 +323,19 @@ class IO:
         
         return filtered labels_metadata, labels (numpy array)
         """
+        
         labels_metadata = np.array(labels_metadata)
+
+        if uniq:
+            logging.debug('Dropping duplicate values...')
+            df = pd.DataFrame(labels_metadata)
+            mask = np.invert(df.duplicated([0,1]).as_matrix())
+            labels_metadata = labels_metadata[(mask)]
+            labels = labels[(mask)]
+            
+            logging.debug('Shape of uniq metadata: {}'.format(labels_metadata.shape))
+            logging.debug('Shape of uniq data: {}'.format(labels.shape))
+        
         mask = np.isin(labels_metadata, features_metadata)
         if invert:
             filtered_labels = labels[np.invert((mask[:,0] & mask[:,1]))]

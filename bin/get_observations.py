@@ -42,22 +42,157 @@ def split_timerange(starttime, endtime, days=1, hours=0, timestep=60):
         end = start + timedelta(days=days, hours=hours)
     return chunks
 
+def log_process(count, total):
+    """
+    Log process 
+    """
+    if count%10 == 0:
+        logging.info('Handled {}/{} rows...'.format(count, total))
+
+def get_prec_sum(args):
+    """ 
+    Get precipitation sum
+    """
+    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=json&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timesteps=6&timestep=60&starttime={endtime}&param=precipitation1h,stationname&attributes=stationname&numberofstations=3&maxdistance={maxdistance}".format(**args)
+
+    logging.debug('Using url: {}'.format(url))
+    
+    with urllib.request.urlopen(url, timeout=600) as u:
+        rawdata = json.loads(u.read().decode("utf-8"))        
+
+    logging.debug('Precipitation data loaded')
+    
+    if len(rawdata) == 0:
+        return [-99, -99]
+
+    # Go through stations
+    prec_sums_6h, prec_sums_3h = [], []
+    for station,values in rawdata.items():
+        # if station is empty, continue to next station
+        if len(values) == 0:
+            continue
+        
+        # Go through times
+        prec_sum_6h = 0
+        prec_sum_3h = 0
+        i = 0
+        for step in values:
+            i += 1                
+            try:
+                prec = float(step['precipitation1h'])
+                if prec >= 0:
+                    prec_sum_6h += prec
+                    if i > 3:
+                        prec_sum_3h += prec
+                    found = True
+            except:
+                break
+        prec_sums_6h.append(prec_sum_6h)
+        prec_sums_3h.append(prec_sum_3h)
+
+    if not found:
+        return [-99, -99]
+        
+    return [max(prec_sums_3h), max(prec_sums_6h)]
+
+def get_flashes(args):
+    """
+    Get flashes for given place
+
+    args : dict
+           params to be given in creating url
+    
+    return metadata, data (list)    
+    """
+
+    # Getting flashes is slow. Don't do it for winter times
+    d = datetime.fromtimestamp(args['endtime'])
+    if int(d.strftime('%m')) < 6 or int(d.strftime('%m')) > 8:
+        logging.debug('Not thunder storm season, returning 0 for flashes...')
+        return 0
+    
+    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?param=peak_current&producer=flash&format=json&starttime={starttime}&endtime={endtime}&latlon={latlon}:{maxdistance}".format(**args)
+
+    logging.debug('Using url: {}'.format(url))
+    
+    with urllib.request.urlopen(url, timeout=600) as u:
+        count = len(json.loads(u.read().decode("utf-8")))
+
+    logging.debug('Flash data loaded')
+    return count
+        
+def get_ground_obs(params, ids, args):
+    """
+    Get ground observations which can be fetched directly from
+    timeseries
+    
+    params : list
+             list of params
+    ids : dict
+          ids
+    args : dict
+           params to be given in creating url
+    
+    return metadata, data (list)
+    """
+
+    url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=json&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timesteps=1&starttime={endtime}&param={params},stationname&attributes=stationname&numberofstations=3&maxdistance={maxdistance}'.format(**args)
+    
+    logging.debug('Loading data from SmartMet Server...')
+    logging.debug('Using url: {}'.format(url))
+
+    with urllib.request.urlopen(url, timeout=6000) as u:
+        rawdata = json.loads(u.read().decode("utf-8"))        
+
+    if len(rawdata) == 0:
+        logging.error('No data for location {} and time {}'.format(args['latlon'], datetime.fromtimestamp(args['endtime']).strftime('%Y-%m-%d %H:%M:%S')))
+        raise ValueError('No data found')
+    
+    # Parse data to numpy array
+    logging.debug('Parsing data to np array...')
+    data, metadata, row = [], [], []        
+
+    # Go through stations
+    for station,values in rawdata.items():
+        # if station is empty, continue to next station
+        if len(values) == 0:
+            continue
+
+        # Go through rows and parameters
+        for el in values:
+            for param in params[2:]:
+                if el[param] is None:
+                    row.append(-99)
+                else:
+                    row.append(el[param])
+
+        # if row is not empty don't continue to next stations
+        if len(row) > 0:
+            metadata.append([int(el['time']), ids[el['place']], el['lon'], el['lat']])
+            data.append(row)
+            break
+        
+    return metadata, data
+
+
 def process_timerange(starttime, endtime, params, producer, ids):
+
     """
     Process timerange
     """
     a = mlfdb.mlfdb(options.db_config_file)
     io = lib.io.IO()
     
-    logging.info('Processing time {} - {}...'.format(starttime.strftime('%Y-%m-%d %H:%M'), endtime.strftime('%Y-%m-%d %H:%M')))
+    logging.info('Processing time {} - {}...'.format(starttime.strftime('%Y-%m-%d %H:%M:%S'), endtime.strftime('%Y-%m-%d %H:%M:%S')))
 
     l_metadata, l_header, l_data = a.get_rows(options.dataset, rowtype='label', starttime=starttime, endtime=endtime)
     f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)    
-    f_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True)
+    filt_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True, uniq=True)
 
-    handled = set()
+    # Checking handled rows should not be needed but is for safety
+    handled = set() 
     count = 0
-    for row in f_metadata:
+    for row in filt_metadata:
         count += 1
         time = int(row[0])
         latlon = '{},{}'.format(row[3], row[2])
@@ -67,58 +202,56 @@ def process_timerange(starttime, endtime, params, producer, ids):
             continue
         else:
             handled.add(timepoint)
+            log_process(count, len(filt_metadata))
         
         # Create url and get data
-        url = 'http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?format=json&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timesteps=1&starttime={endtime}&param={params},stationname&attributes=stationname&numberofstations=3'.format(latlon=latlon, params=','.join(params), endtime=time, producer=options.producer)
+        apikey = '9fdf9977-5d8f-4a1f-9800-d80a007579c9'
 
-        logging.debug('Loading data from SmartMet Server...')
-        logging.debug('Using url: {}'.format(url))
+        args = {
+            'latlon': latlon,
+            'params': ','.join(params),
+            'endtime': time,
+            'producer': options.producer,
+            'apikey' : apikey,
+            'maxdistance' : 50000 # default
+        }
+        flash_args = {
+            'starttime' : (time - 3600),
+            'endtime' : time,
+            'latlon' : latlon,
+            'apikey' : apikey,
+            'maxdistance' : 30000 # Harmonie FlashMultiplicity value
+        }
+        prec_args = {
+            'producer' : options.producer,
+            'endtime' : time,
+            'latlon' : latlon,
+            'apikey' : apikey,
+            'maxdistance' : 50000 # Default
+        }
 
         try:
-            with urllib.request.urlopen(url, timeout=6000) as u:
-                rawdata = json.loads(u.read().decode("utf-8"))
-        except timeout as e:
-            logging.error(e)
-            logging.error(url)
+            metadata, data = get_ground_obs(params, ids, args)
+            data[0].append(get_flashes(flash_args))
+            data[0] += get_prec_sum(prec_args)
+        except timeout:
+            logging.error('Timeout while fetching data...')
             continue
-
-        if len(rawdata) == 0:
-            logging.error('No data for location {} and time {}'.format(latlon, datetime.fromtimestamp(time).strftime('%Y-%m-%d %H:%M:%S')))
+        except ValueError as e:
+            logging.error(e)
+            continue
+        except Exception as e:
+            logging.error(e)
             continue
         
-        # Parse data to numpy array
-        logging.debug('Parsing data to np array...')
-        data, metadata, row = [], [], []        
-
-        # Go through stations
-        for station,values in rawdata.items():
-            # if station is empty, continue to next station
-            if len(values) == 0:
-                continue
-
-            # Go through rows and parameters
-            for el in values:
-                for param in params[2:]:
-                    if el[param] is None:
-                        row.append(-99)
-                    else:
-                        row.append(el[param])
-
-            # if row is not empty don't continue to next stations
-            if len(row) > 0:
-                metadata.append([int(el['time']), ids[el['place']], el['lon'], el['lat']])
-                data.append(row)
-                break
-            
         data = np.array(data).astype(np.float)
+        
         logging.debug('Dataset size: {}'.format(data.shape))
         logging.debug('Metadata size: {}'.format(np.array(metadata).shape))
-                
-        if count%10 == 0:
-            logging.info('Handled {}/{} rows...'.format(count, len(f_metadata)))
-
+        log_process(count, len(filt_metadata))
+        
         # Save to database        
-        header = params[2:]
+        header = params[2:] + ['count(flash:60:0)', 'max(sum_t(precipitation1h:180:0))', 'max(sum_t(precipitation1h:360:0))']
         data = np.array(data)
     
         logging.debug('Inserting new dataset to db...')
@@ -172,9 +305,9 @@ def main():
     end = datetime.strptime(options.endtime, '%Y-%m-%d')
 
     res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, options.producer, ids)) for chunk in split_timerange(start, end, days=0, hours=6)]
-    res = [p.get() for p in res]
+    total_count = [p.get() for p in res]
 
-    logging.info('Added {} rows observations to db.'.format(sum(res)))
+    logging.info('Added {} rows observations to db.'.format(sum(total_count)))
     
 if __name__=='__main__':
 
