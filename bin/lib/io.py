@@ -10,6 +10,8 @@ import boto3
 import random
 import pickle
 import json
+import logging
+import datetime as dt
 
 class IO:
 
@@ -242,6 +244,29 @@ class IO:
             return filename
 
         return str(tmp)
+
+    def get_dates(self, options):
+        """
+        Parse DateTime objects from options
+        
+        options : dict
+                  options from argparse
+        
+        return starttime (DateTime), endtime (DateTime)
+        """
+        try:
+            starttime = dt.datetime.strptime(options.starttime, "%Y-%m-%d")
+        except:
+            starttime = None
+            logging.info('Starttime not set or malformed')
+        
+        try:
+            endtime = dt.datetime.strptime(options.endtime, "%Y-%m-%d")
+        except:
+            endtime = None
+            logging.info('Endtime not set or malformed')
+
+        return starttime, endtime
     
     #
     # TRAINS
@@ -278,7 +303,38 @@ class IO:
 
         raise KeyError('Id for name {} not found'.format(name))
     
+    def filter_labels(self, labels_metadata, labels,
+                      features_metadata, features, invert=False):
+        """
+        Return labels which have corresponding features
+        
+        labels_metadata : list
+                          labels metadata
+        labels : numpy array
+                 labels
+        features_metadata : list
+                            features metadata
+        features : numpy array
+                   features
+        invert : bool
+                 if True, labels with missing features are returned (default False)
+        
+        return filtered labels_metadata, labels (numpy array)
+        """
+        labels_metadata = np.array(labels_metadata)
+        mask = np.isin(labels_metadata, features_metadata)
+        if invert:
+            filtered_labels = labels[np.invert((mask[:,0] & mask[:,1]))]
+            filtered_labels_metadata = labels_metadata[np.invert((mask[:,0] & mask[:,1]))]
+        else:
+            filtered_labels = labels[(mask[:,0] & mask[:,1])]
+            filtered_labels_metadata = labels_metadata[(mask[:,0] & mask[:,1])]
 
+        logging.debug('Shape of filtered data: {}'.format(filtered_labels.shape))
+        logging.debug('Shape of filtered metadata: {}'.format(filtered_labels_metadata.shape))                                             
+
+        return filtered_labels_metadata, filtered_labels
+    
     #
     # SASSE
     #     
