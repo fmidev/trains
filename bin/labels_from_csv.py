@@ -10,32 +10,42 @@ import urllib.request, json
 import requests
 import codecs
 import multiprocessing
+from itertools import repeat
 
 from mlfdb import mlfdb
 from lib import io as oi
 
-def process_rows(X, header, ids, dataset, a, io, row_prefix=0):
+def process_rows(X, header, ids, dataset, io, row_prefix=0):
     """
     Process rows in file
     """
-    
+
+    logging.info('Procssing chunk with length {}...'.format(len(X)))
+
+    a = mlfdb.mlfdb(config_filename=options.db_config_file)
     train_types = {'K': 0,
                    'L': 1,
                    'T': 2,
                    'M': 3}
-    
+
     data = []
     metadata = []
     errors = set()
+    batch_size = 1000
+    inserted_count = 0
     
     for row in X:
-        timestr = row[0]+'T'+row[1]
-        t = datetime.strptime(timestr, "%Y-%m-%dT%H") + timedelta(hours=1)
-        loc = row[3]
-        train_type = train_types[row[4]]
-        late_minutes = int(row[7])
-        total_late_minutes = int(row[5])
-        train_count = int(row[9])
+        try:
+            timestr = row[0]+'T'+row[1]
+            t = datetime.strptime(timestr, "%Y-%m-%dT%H") + timedelta(hours=1)
+            loc = row[3]
+            train_type = train_types[row[4]]
+            late_minutes = int(row[7])
+            total_late_minutes = int(row[5])
+            train_count = int(row[9])
+        except Exception as e:
+            logging.error(e)
+            continue
         
         try:
             metadata.append([t, io.find_id(ids, loc)])
@@ -44,26 +54,19 @@ def process_rows(X, header, ids, dataset, a, io, row_prefix=0):
             errors.add(loc)
             continue
 
-    logging.error('Location not found for locations: {}'.format(','.join(errors)))
+        # Save data in batches
+        if len(data) >= batch_size:
+            inserted_count += a.add_rows('label', header, np.array(data), metadata, dataset=dataset)
+            data = []
+            metadata = []
+            if inserted_count%5000 == 0:
+                logging.info('{} rows inserted...'.format(inserted_count))
+
+    if len(errors) > 0:
+        logging.error('Coordinates not found for locations: {}'.format(','.join(errors)))
     
-    # Save data
-    start = 0
-    end = 0
-    batch_size = 100
-    row_offset = 0
-    while start < len(data)-1:
-        if start + batch_size > len(data)-1:
-            end = len(data)-1
-        else:
-            end = start + batch_size
-
-        logging.info('Insert rows {}-{}/{}...'.format(start, end, len(data)-1))
-        row_offset += a.add_rows('label', header, np.array(data[start:end]), metadata[start:end], dataset=dataset) #, row_offset=row_offset)        
-        start = end
-
-    return end
-
-
+    return inserted_count
+    
 
 def process_file(filename, dataset, ids, a, io, job_count=1, row_prefix=0):
     """
@@ -71,25 +74,27 @@ def process_file(filename, dataset, ids, a, io, job_count=1, row_prefix=0):
     """
 
     logging.info('Processing file {}...'.format(filename))
-        
+
+    # Initialize process pool
+    if job_count < 0:
+        job_count = multiprocessing.cpu_count()
+    pool = multiprocessing.Pool(job_count)
+    
     # Get data
     filename = io.get_file_to_process(filename)
     X = io.read_data(filename, delimiter=',', remove='"')
     header = ['late_minutes', 'total_late_minutes', 'train_type', 'train_count']
-
-    # Split data to chunks
-    if job_count < 0:
-        job_count = multiprocessing.cpu_count()
-        
-    chunks = list(io.chunks(X, round(len(X)/job_count)))
-
-    # Process chunks
-    jobs = []    
-    for i in range(job_count):
-        p = multiprocessing.Process(target=process_rows, args=(chunks[i], header, ids, dataset, a, io, row_prefix,))
-        jobs.append(p)
-        p.start()
     
+    # Split data to chunks
+    chunks = list(io.chunks(X, round(len(X)/job_count)))
+    res = [pool.apply_async(process_rows, args=(chunk, header, ids, dataset, io)) for chunk in chunks]
+    res = [p.get() for p in res]
+    
+    logging.info('Inserted {} rows into db'.format(sum(res)))
+
+
+    
+            
 def main():
     """
     Put labels from csv file to db
