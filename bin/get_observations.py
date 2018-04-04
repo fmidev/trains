@@ -8,6 +8,7 @@ import json
 import itertools
 import numpy as np
 import urllib.request, json
+from socket import timeout
 import requests
 import codecs
 import multiprocessing
@@ -15,13 +16,7 @@ import multiprocessing
 from mlfdb import mlfdb
 import lib.io
 
-def pointtime_in_metadata(metadata, location_id, time):
-    for row in metadata:
-        if int(row[0]) == int(time) and int(row[1]) == int(location_id):
-            return True
-    return False
-
-def split_timerange(starttime, endtime, days=1, hours=0):
+def split_timerange(starttime, endtime, days=1, hours=0, timestep=60):
     """
     Split timerange to n days
     
@@ -33,6 +28,8 @@ def split_timerange(starttime, endtime, days=1, hours=0):
            time chunk length, days
     hours : int
            time chunk length, hours
+    timestep : int
+               timestep in minutes
 
     return list of tuples [(starttime:Datetime, endtime:Datetime)]
     """
@@ -40,94 +37,92 @@ def split_timerange(starttime, endtime, days=1, hours=0):
     start = starttime
     end = start + timedelta(days=days, hours=hours)
     while end <= endtime:        
-        chunks.append((start, end))
+        chunks.append((start + timedelta(minutes=timestep), end))
         start = end
         end = start + timedelta(days=days, hours=hours)
-    chunks.append((start, end))
     return chunks
 
-def process_timerange(latlons, starttime, endtime, timestep, params, producer, ids):
+def process_timerange(starttime, endtime, params, producer, ids):
     """
     Process timerange
     """
-
-    startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
-    endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
-    logging.info('Processing time {} - {}...'.format(startstr, endstr))
-
     a = mlfdb.mlfdb(options.db_config_file)
-    # Create url and get data
-    url = 'http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?format=json&producer={producer}&tz=local&timeformat=epoch&latlons={latlons}&timestep={timestep}&starttime={starttime}&endtime={endtime}&param={params}'.format(latlons=','.join(latlons), timestep=options.timestep, params=','.join(params), starttime=startstr, endtime=endstr, producer=options.producer)
-
-    logging.info('Loading data from SmartMet Server...')
-    logging.debug('Using url: {}'.format(url))
-
-    with urllib.request.urlopen(url, timeout=6000) as u:
-        data = json.loads(u.read().decode("utf-8"))
-        
-    # Parse data to numpy array
-    logging.debug('Parsing data to np array...')
-    result = []
-    for el in data:
-        row = []
-        for param in params:
-            if el[param] is None:
-                row.append(-99)
-            else:
-                row.append(el[param])
-        result.append(row)
-    result = np.array(result)
-    places = result[:,1]
-    result = np.delete(result, 1, 1).astype(np.float)
-    logging.debug('Dataset size: {}'.format(result.shape))
+    io = lib.io.IO()
     
-    # Result by time
-    logging.debug('Arranging by time...')
-    result = result[result[:,0].argsort()]
+    logging.info('Processing time {} - {}...'.format(starttime.strftime('%Y-%m-%d %H:%M'), endtime.strftime('%Y-%m-%d %H:%M')))
 
-    # Go through data, remove unnecessary rows and convert coordinates
-    # back to location ids
-    logging.info('Decimating unnecessary data...')
-    logging.debug('Reading labels data...')
-    labels_metadata, _, __ = a.get_rows(options.dataset, rowtype='label')
-    
-    metadata = []
-    data = []
-    removed = 0
+    l_metadata, l_header, l_data = a.get_rows(options.dataset, rowtype='label', starttime=starttime, endtime=endtime)
+    f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)    
+    f_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True)
+
+    handled = set()
     count = 0
-    
-    # Masks don't work because result and labels are not necessary in the same order
-    #lm = np.array(labels_metadat)
-    #mask = np.ones_like(result)*(places[:]==result[:,1])
-    #result_time = np.ma.MaskedArray(result, mask)
-    #logging.debug("Length of dataset after masking places: {}".format(len(result_time)))
-
-    #mask = np.ones_like(result_time)*(lm[:,0]==result_time[:,0])
-    #logging.debug("Length of dataset after masking times: {}".format(len(np.ma.MaskedArray(result_time, mask))))
-
-    for row in result:
-        if pointtime_in_metadata(labels_metadata, ids[places[count]], row[0]):
-            metadata.append([int(row[0]), ids[places[count]]])
-            data.append(row[1:])
-        else:
-            removed += 1
-        
+    for row in f_metadata:
         count += 1
-        if count%500 == 0:
-            logging.info('Handled {}/{} rows ({} rows removed)...'.format(count, len(result), removed))
+        time = int(row[0])
+        latlon = '{},{}'.format(row[3], row[2])
+
+        timepoint = (time, latlon)
+        if timepoint in handled:
+            continue
+        else:
+            handled.add(timepoint)
         
-    logging.info('Removed {} rows from data'.format(removed))
+        # Create url and get data
+        url = 'http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?format=json&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timesteps=1&starttime={endtime}&param={params},stationname&attributes=stationname&numberofstations=3'.format(latlon=latlon, params=','.join(params), endtime=time, producer=options.producer)
 
-    # Save to database        
-    header = params[2:]
-    data = np.array(data)
+        logging.debug('Loading data from SmartMet Server...')
+        logging.debug('Using url: {}'.format(url))
+
+        try:
+            with urllib.request.urlopen(url, timeout=6000) as u:
+                rawdata = json.loads(u.read().decode("utf-8"))
+        except timeout as e:
+            logging.error(e)
+            logging.error(url)
+            continue
+
+        if len(rawdata) == 0:
+            logging.error('No data for location {} and time {}'.format(latlon, datetime.fromtimestamp(time).strftime('%Y-%m-%d %H:%M:%S')))
+            continue
+        
+        # Parse data to numpy array
+        logging.debug('Parsing data to np array...')
+        data, metadata, row = [], [], []        
+
+        # Go through stations
+        for station,values in rawdata.items():
+            # if station is empty, continue to next station
+            if len(values) == 0:
+                continue
+
+            # Go through rows and parameters
+            for el in values:
+                for param in params[2:]:
+                    if el[param] is None:
+                        row.append(-99)
+                    else:
+                        row.append(el[param])
+
+            # if row is not empty don't continue to next stations
+            if len(row) > 0:
+                metadata.append([int(el['time']), ids[el['place']], el['lon'], el['lat']])
+                data.append(row)
+                break
+            
+        data = np.array(data).astype(np.float)
+        logging.debug('Dataset size: {}'.format(data.shape))
+        logging.debug('Metadata size: {}'.format(np.array(metadata).shape))
+                
+        if count%10 == 0:
+            logging.info('Handled {}/{} rows...'.format(count, len(f_metadata)))
+
+        # Save to database        
+        header = params[2:]
+        data = np.array(data)
     
-    if options.replace:
-        logging.info('Removing old dataset...')
-        a.remove_dataset(options.dataset, type='feature')
-
-    logging.debug('Inserting new dataset to db...')
-    a.add_rows('feature', header, data, metadata, options.dataset)
+        logging.debug('Inserting new dataset to db...')
+        a.add_rows('feature', header, data, metadata, options.dataset)
 
     return len(data)
 
@@ -140,18 +135,22 @@ def main():
     locations. I.e. timestep is assumed to be constant between start
     and end time. 
     """
-
+    
     # Initialize process pool
     job_count = options.job_count
     if job_count < 0:
         job_count = multiprocessing.cpu_count()
     pool = multiprocessing.Pool(job_count)
 
+    a = mlfdb.mlfdb(options.db_config_file)
     io = lib.io.IO()    
     params = io.read_parameters('cnf/parameters.txt')
-    
-    # Get locations and create coordinate list for SmartMet
-    a = mlfdb.mlfdb(options.db_config_file)
+
+    if options.replace:
+        logging.info('Removing old dataset...')
+        a.remove_dataset(options.dataset, type='feature')
+
+    # Get locations and create coordinate list for SmartMet        
     latlons = []
     ids = dict()
     if options.locations is not None:
@@ -172,7 +171,7 @@ def main():
     start = datetime.strptime(options.starttime, '%Y-%m-%d')
     end = datetime.strptime(options.endtime, '%Y-%m-%d')
 
-    res = [pool.apply_async(process_timerange, args=(latlons, chunk[0], chunk[1], options.timestep, params, options.producer, ids)) for chunk in split_timerange(start, end, days=0, hours=6)]
+    res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, options.producer, ids)) for chunk in split_timerange(start, end, days=0, hours=6)]
     res = [p.get() for p in res]
 
     logging.info('Added {} rows observations to db.'.format(sum(res)))
