@@ -1,5 +1,6 @@
 api/cnf/database.ini
 cnf/database.ini
+cnf/*.json
 *~
 \#*\#
 .\#*
