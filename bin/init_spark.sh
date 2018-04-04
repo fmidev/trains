@@ -6,7 +6,7 @@
 # sudo usermod -aG docker $USER
 
 apt-get update
-apt-get install -y --reinstall wget libtiff5-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev python3 python-gdal python3-pip postgresql libpq-dev postgresql-client postgresql-client-common python-urllib3
+apt-get install -y --reinstall wget libtiff5-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev python3-pip postgresql libpq-dev postgresql-client postgresql-client-common python-urllib3
 pip3 install unicodecsv pyproj requests psycopg2-binary numpy google-cloud scipy scikit-learn PySocks
 pip3 install --upgrade https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-1.6.0-cp34-cp34m-linux_x86_64.whl
 pip3 install keras boto3

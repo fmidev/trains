@@ -27,14 +27,14 @@ def process_file(filename, dataset, ids, a, io, row_prefix=0):
                    'L': 1,
                    'T': 2,
                    'M': 3}
-
+    
     # Get data
     filename = io.get_file_to_process(filename)
     X = io.read_data(filename, delimiter=',', remove='"')
     header = ['late_minutes', 'total_late_minutes', 'train_type', 'train_count']
     data = []
     metadata = []
-    errors = []
+    errors = set()
     
     for row in X:
         timestr = row[0]+'T'+row[1]
@@ -49,7 +49,7 @@ def process_file(filename, dataset, ids, a, io, row_prefix=0):
             metadata.append([t, io.find_id(ids, loc)])
             data.append([late_minutes, total_late_minutes, train_type, train_count])
         except Exception as e:
-            errors.append(loc)
+            errors.add(loc)
             continue
 
     logging.error('Location not found for locations: {}'.format(','.join(errors)))
@@ -64,9 +64,9 @@ def process_file(filename, dataset, ids, a, io, row_prefix=0):
             end = len(data)-1
         else:
             end = start + batch_size
-            
+
         logging.info('Insert rows {}-{}/{}...'.format(start, end, len(data)-1))
-        row_offset += a.add_rows('label', header, np.array(data[start:end]), metadata[start:end], dataset=dataset, row_offset=row_offset)        
+        row_offset += a.add_rows('label', header, np.array(data[start:end]), metadata[start:end], dataset=dataset) #, row_offset=row_offset)        
         start = end
 
     return end
@@ -78,7 +78,14 @@ def main():
     
     io = oi.IO(gs_bucket=options.gs_bucket)
     a = mlfdb.mlfdb(config_filename=options.db_config_file)
-    sc = pyspark.SparkContext("local")
+
+    # sc = pyspark.SparkContext("local")
+    # sc = pyspark.SparkContext('spark://q2-m.c.trains-197305.internal:7077')
+    # SparkSession.builder.config(conf=SparkConf())
+    sc = spark.sparkContext
+    #conf = pyspark.SparkConf()
+    #conf.setMaster('yarn')
+    #sc = pyspark.SparkContext(conf)
 
     # Remove old dataset
     if options.replace:
@@ -103,7 +110,7 @@ def main():
         files = io.get_files_to_process('data', 'csv')
 
     logging.info('Processing files: {}'.format(','.join(files)))
-
+       
     sc.parallelize(files).foreach(lambda filename: count.add(process_file(filename, options.dataset, ids, a, io)))
     
     logging.info('Added {} samples to db'.format(count.value)) 
