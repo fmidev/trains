@@ -143,15 +143,13 @@ def get_ground_obs(params, ids, args):
 
     with urllib.request.urlopen(url, timeout=6000) as u:
         rawdata = json.loads(u.read().decode("utf-8"))        
-
+    logging.debug('Observations loaded')
+    
     if len(rawdata) == 0:
         logging.error('No data for location {} and time {}'.format(args['latlon'], datetime.fromtimestamp(args['endtime']).strftime('%Y-%m-%d %H:%M:%S')))
         raise ValueError('No data found')
     
-    # Parse data to numpy array
-    logging.debug('Parsing data to np array...')
     data, metadata, row = [], [], []        
-
     # Go through stations
     for station,values in rawdata.items():
         # if station is empty, continue to next station
@@ -189,6 +187,8 @@ def process_timerange(starttime, endtime, params, producer, ids):
     f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)    
     filt_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True, uniq=True)
 
+    logging.info('There are {} (of total {}) lines to process...'.format(len(filt_metadata), len(l_metadata)))
+    
     # Checking handled rows should not be needed but is for safety
     handled = set() 
     count = 0
@@ -199,10 +199,11 @@ def process_timerange(starttime, endtime, params, producer, ids):
 
         timepoint = (time, latlon)
         if timepoint in handled:
+            logging.info('Duplicate row found')
+            log_process(count, len(filt_metadata))
             continue
         else:
             handled.add(timepoint)
-            log_process(count, len(filt_metadata))
         
         # Create url and get data
         apikey = '9fdf9977-5d8f-4a1f-9800-d80a007579c9'
@@ -257,7 +258,7 @@ def process_timerange(starttime, endtime, params, producer, ids):
         logging.debug('Inserting new dataset to db...')
         a.add_rows('feature', header, data, metadata, options.dataset)
 
-    return len(data)
+    return count
 
 def main():
     """

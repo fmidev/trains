@@ -57,3 +57,10 @@ services:
     image: tervo/ml:cpu    
     command: python -u bin/lr.py --dataset ${DATASET:-trains-10d-sample} --starttime 2018-01-07 --endtime 2018-01-08 --logging_level DEBUG
 #############    
+  clean_db:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+    image: tervo/ml:cpu_local    
+    command: python -u bin/clean_duplicates.py --dataset ${DATASET:-trains-10d-sample} --logging_leve ${LOGGING:-INFO} --count 29
+#############    
