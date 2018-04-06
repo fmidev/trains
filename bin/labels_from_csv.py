@@ -55,7 +55,7 @@ def process_rows(X, header, ids, dataset, io, row_prefix=0):
             continue
 
         # Save data in batches
-        if len(data) >= batch_size:
+        if len(data) >= batch_size or len(data) >= len(X):
             inserted_count += a.add_rows('label', header, np.array(data), metadata, dataset=dataset)
             data = []
             metadata = []
