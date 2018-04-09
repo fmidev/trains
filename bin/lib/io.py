@@ -323,9 +323,12 @@ class IO:
         
         return filtered labels_metadata, labels (numpy array)
         """
-        
-        labels_metadata = np.array(labels_metadata)
 
+        if len(features_metadata) == 0 or len(features) == 0:
+            return labels_metadata, labels
+        
+        labels_metadata = np.array(labels_metadata)        
+        
         if uniq:
             logging.debug('Dropping duplicate values...')
             df = pd.DataFrame(labels_metadata)
@@ -348,11 +351,68 @@ class IO:
         logging.debug('Shape of filtered metadata: {}'.format(filtered_labels_metadata.shape))                                             
 
         return filtered_labels_metadata, filtered_labels
-    
+
+    def filter_ground_obs(self, obs, labels_metadata):
+        """
+        Filter ground observations so that only train stations where trains
+        have actually visited during current every hour are kept
+        
+        obs : list
+               observations got from SmartMet Server
+        labels_metadata : list
+                          labels metadata
+        
+        returns : np array, np array
+                  metadata, data
+        """
+        if len(obs) == 0 or len(labels_metadata) == 0:
+            return [], []
+        
+        # Initialize dataframes
+        labels_df = pd.DataFrame(labels_metadata)
+        
+        # Create comparison hashes
+        labels_df[0] = labels_df[[0]].astype({0: int})
+        labels_hash = labels_df[3].map(str) + ','+labels_df[2].map(str)+ '/'+labels_df[0].map(str)        
+        obs_hash = obs[1]+'/'+obs[0].map(str)
+
+        # Mask observations
+        obs_mask = np.isin(obs_hash, labels_hash)
+        filt_obs = obs[(obs_mask)]
+        obs_hash = obs_hash[(obs_mask)]
+
+        # Put hash to index
+        filt_obs.loc[:,'index'] = obs_hash
+        filt_obs = filt_obs.set_index('index')
+
+        # Filter labels metadata 
+        labels_mask = np.isin(labels_hash, obs_hash)
+        filt_labels_metadata = labels_df[(labels_mask)]
+        filt_labels_hash = labels_hash[(labels_mask)]
+
+        # Put hash to index
+        filt_labels_metadata.loc[:,'index'] = filt_labels_hash
+        filt_labels_metadata = filt_labels_metadata.set_index('index')
+
+        # Select correct vaues from obserations to every station and hour
+        result = pd.DataFrame()
+        for h,values in filt_labels_metadata.iterrows():
+            result = result.append(filt_obs.loc[[h]])
+
+        result = result.drop(columns=[0,1])
+
+        result.fillna(-99, inplace=True)
+        
+        print("Obs shape: {} | Filt obs shape: {} | result shape: {}".format(obs.shape, filt_obs.shape, result.shape))
+        print("Labels shape: {} | Filt labels shape: {}".format(labels_df.shape, filt_labels_metadata.shape))
+
+        return filt_labels_metadata.values, result.values
+        
     #
     # SASSE
     #     
     def get_classes(self, X, thresholds=[0, 0.2, 0.4, 0.6]):
+
         """
         Get classes from X based on thresholds.
         """
