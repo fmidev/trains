@@ -352,62 +352,206 @@ class IO:
 
         return filtered_labels_metadata, filtered_labels
 
-    def filter_ground_obs(self, obs, labels_metadata):
+    def filter_labels_by_latlon(self, labels_metadata, latlon):
+        """
+        Filter labels by latlon
+        
+        labels_metadata : Pandas DataFrame / list / np array
+                          labels metadata
+        latlon : str
+                 lat,lon 
+
+        returns : DataFrame
+        """
+        if len(labels_metadata) == 0:
+            return pd.DataFrame()
+        
+        # Initialize dataframes
+        labels_metadata = pd.DataFrame(labels_metadata)
+
+        lat,lon = latlon.split(',')
+        label_metadata = labels_metadata[(labels_metadata.loc[:,3] == float(lat)) &
+                                         (labels_metadata.loc[:,2] == float(lon))]
+        
+        return label_metadata
+
+    def get_timerange(self, label_metadata):
+        """
+        Get first and last time from label metadata
+        
+        label_metadata : DataFrame
+                         label metadata (assumed to be in order)
+        
+        returns : DateTime, DateTime
+                  starttime, endtime
+        """
+
+        label_metadata.sort_values(0, inplace=True)
+        start = dt.datetime.fromtimestamp(int(label_metadata.iloc[0,0]))
+        end = dt.datetime.fromtimestamp(int(label_metadata.iloc[-1,0]))
+        return start,end
+    
+    def filter_ground_obs(self, obs, label_metadata):
         """
         Filter ground observations so that only train stations where trains
         have actually visited during current every hour are kept
         
         obs : list
-               observations got from SmartMet Server
-        labels_metadata : list
-                          labels metadata
+              observations got from SmartMet Server
+        label_metadata : list
+                         labels metadata
         
-        returns : np array, np array
+        returns : DataFrame, DataFrame
                   metadata, data
         """
-        if len(obs) == 0 or len(labels_metadata) == 0:
+        if len(obs) == 0 or len(label_metadata) == 0:
             return [], []
+
+        logging.debug('Filtering ground observations...')
         
         # Initialize dataframes
-        labels_df = pd.DataFrame(labels_metadata)
+        labels_metadata = pd.DataFrame(label_metadata)
+
+        # Take only observations from stations where have been train
+        filt_labels_metadata, filt_obs = self._filter_obs(obs, label_metadata)        
+
+        #result = result.drop(columns=[0,1])
+
+        filt_obs.fillna(-99, inplace=True)
         
+        logging.debug("Obs shape: {} | Filt obs shape: {}".format(obs.shape, filt_obs.shape))
+        logging.debug("Labels length: {} | Filt labels shape: {}".format(len(label_metadata), filt_labels_metadata.shape))
+
+        return filt_labels_metadata, filt_obs 
+
+    def filter_flashes(self, flash_df, data_df):
+        """
+        Filter flashes
+        
+        flash_df : DataFrame
+                   flashes
+        data_df : DataFrame
+                  data frame where data is appended to
+        
+        returns : DataFrame
+                  data with appended values
+        """
+        if len(flash_df) == 0:
+            data_df.loc[:,'flash'] = 0
+            return data_df
+
+        data_df = data_df.sort_values('time')
+
+        for h, values in data_df.iterrows():
+            count = len(flash_df[flash_df.time <= values.time])
+            data_df.loc[h, 'flash'] = count
+            flash_df = flash_df[flash_df.time > values.time]
+
+        return data_df        
+    
+    def filter_precipitation(self, obs, data):
+        """
+        Filter ground observations so that only train stations where trains
+        have actually visited during current every hour are kept
+        
+        obs : DataFrame
+               observations got from SmartMet Server
+        data : DataFrame
+               DataFrame where labels are appended to 
+        
+        returns : DataFrame
+                 data
+        """
+
+        if len(obs) == 0:
+            data.loc[:,'3hsum'] = -99
+            data.loc[:,'6hsum'] = -99
+            return data
+
+        # Go through data and calculate 3h and 6h sums
+        obs = self._calc_prec_sums(obs)
+
+        # Select correct vaues from obserations to every station and hour        
+        data.set_index('time', drop=False, inplace=True)
+        obs.loc[:,'time'] = obs.loc[:,'time'].astype(int)
+        obs.set_index('time', drop=False, inplace=True)        
+
+        result = pd.concat([data, obs.loc[:,['3hsum','6hsum']]], axis=1, join_axes=[data.index])
+        # print(obs)
+        # notfound = 0
+        # for h,values in data.iterrows():
+        #     try:
+        #         data.loc[h,'3hsum'] = obs.loc[h,'3hsum']
+        #         data.loc[h,'6hsum'] = obs.loc[h,'6hsum']
+        #     except KeyError:
+        #         notfound += 1            
+
+        # logging.debug('Prec sum is missing for {} (out of {}) time-points'.format(notfound, len(data)))
+        logging.debug("Obs shape: {} | result shape: {}".format(obs.shape, data.shape))
+
+        return result
+    
+    
+    def find_best_station(self, obs_df):
+        """
+        Find best station from dataframe
+        
+        obs_df : DataFrame
+                 DataFrame formed by for example get_ground_obs
+        
+        returns : DataFrame
+        """
+        bestrow = obs_df.apply(lambda x: x.count(), axis=1).idxmax()
+        beststation = obs_df.loc[bestrow,0]
+
+        obs_df = obs_df[(obs_df.loc[:,0] == beststation)]
+        obs_df = obs_df.drop(columns=[0])
+    
+        return obs_df
+        
+    
+    def _filter_obs(self, obs, labels_df):
+        """
+        Filter observations based on metadata (private method)       
+        """                
         # Create comparison hashes
-        labels_df[0] = labels_df[[0]].astype({0: int})
-        labels_hash = labels_df[3].map(str) + ','+labels_df[2].map(str)+ '/'+labels_df[0].map(str)        
-        obs_hash = obs[1]+'/'+obs[0].map(str)
+        labels_df.loc[:,0] = labels_df.loc[:,0].astype({0: int})
+        obs.loc[:,'time'] = obs.loc[:,'time'].astype(int)    
 
         # Mask observations
-        obs_mask = np.isin(obs_hash, labels_hash)
+        obs_mask = np.isin(obs.loc[:,'time'], labels_df.loc[:,0])
         filt_obs = obs[(obs_mask)]
-        obs_hash = obs_hash[(obs_mask)]
-
-        # Put hash to index
-        filt_obs.loc[:,'index'] = obs_hash
-        filt_obs = filt_obs.set_index('index')
 
         # Filter labels metadata 
-        labels_mask = np.isin(labels_hash, obs_hash)
+        labels_mask = np.isin(labels_df.loc[:,0], obs.loc[:,'time'])
         filt_labels_metadata = labels_df[(labels_mask)]
-        filt_labels_hash = labels_hash[(labels_mask)]
-
-        # Put hash to index
-        filt_labels_metadata.loc[:,'index'] = filt_labels_hash
-        filt_labels_metadata = filt_labels_metadata.set_index('index')
-
-        # Select correct vaues from obserations to every station and hour
-        result = pd.DataFrame()
-        for h,values in filt_labels_metadata.iterrows():
-            result = result.append(filt_obs.loc[[h]])
-
-        result = result.drop(columns=[0,1])
-
-        result.fillna(-99, inplace=True)
         
-        print("Obs shape: {} | Filt obs shape: {} | result shape: {}".format(obs.shape, filt_obs.shape, result.shape))
-        print("Labels shape: {} | Filt labels shape: {}".format(labels_df.shape, filt_labels_metadata.shape))
+        return filt_labels_metadata, filt_obs
 
-        return filt_labels_metadata.values, result.values
+    def _calc_prec_sums(self, obs):
+        """
+        Calculate 3h and 6h prec sums (private method)
+        """
+        sum_3h = []
+        sum_6h = []
+
+        obs.loc[:,'3hsum'] = -99
+        obs.loc[:,'6hsum'] = -99
         
+        for h,values in obs.iterrows():
+            sum_3h.append(values[5])
+            sum_6h.append(values[5])
+
+            if len(sum_3h) > 3:
+                sum_3h.pop(0)
+                obs.loc[h, '3hsum'] = sum(sum_3h)
+                
+            if len(sum_6h) > 6:
+                sum_6h.pop(0)
+                obs.loc[h, '6hsum'] = sum(sum_6h)
+
+        return obs
+    
     #
     # SASSE
     #     

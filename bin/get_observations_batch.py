@@ -76,47 +76,23 @@ def get_prec_sum(args):
     """ 
     Get precipitation sum
     """
-    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=json&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timesteps=6&timestep=60&starttime={endtime}&param=precipitation1h,stationname&attributes=stationname&numberofstations=3&maxdistance={maxdistance}".format(**args)
+    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timestep=60&starttime={starttime}&endtime={endtime}&param=stationname,time,place,lat,lon,precipitation1h&maxdistance={maxdistance}&numberofstations=5".format(**args)
 
     logging.debug('Using url: {}'.format(url))
     
     with urllib.request.urlopen(url, timeout=600) as u:
-        rawdata = json.loads(u.read().decode("utf-8"))        
+        rawdata = u.read().decode("utf-8")
 
     logging.debug('Precipitation data loaded')
     
     if len(rawdata) == 0:
-        return [-99, -99]
+        return pd.DataFrame()
 
-    # Go through stations
-    prec_sums_6h, prec_sums_3h = [], []
-    for station,values in rawdata.items():
-        # if station is empty, continue to next station
-        if len(values) == 0:
-            continue
-        
-        # Go through times
-        prec_sum_6h = 0
-        prec_sum_3h = 0
-        i = 0
-        for step in values:
-            i += 1                
-            try:
-                prec = float(step['precipitation1h'])
-                if prec >= 0:
-                    prec_sum_6h += prec
-                    if i > 3:
-                        prec_sum_3h += prec
-                    found = True
-            except:
-                break
-        prec_sums_6h.append(prec_sum_6h)
-        prec_sums_3h.append(prec_sum_3h)
-
-    if not found:
-        return [-99, -99]
-        
-    return [max(prec_sums_3h), max(prec_sums_6h)]
+    obsf = StringIO(rawdata)    
+    obs_df = pd.read_csv(obsf, sep=";", header=None)
+    obs_df.rename(columns={1:'time'}, inplace=True)
+    return obs_df
+    
 
 def get_flashes(args):
     """
@@ -129,20 +105,34 @@ def get_flashes(args):
     """
 
     # Getting flashes is slow. Don't do it for winter times
-    d = datetime.fromtimestamp(args['endtime'])
-    if int(d.strftime('%m')) < 6 or int(d.strftime('%m')) > 8:
-        logging.debug('Not thunder storm season, returning 0 for flashes...')
-        return 0
+    #d = datetime.fromtimestamp(args['endtime'])
+    #if int(d.strftime('%m')) < 6 or int(d.strftime('%m')) > 8:
+    #    logging.debug('Not thunder storm season, returning 0 for flashes...')
+    #    return pd.DataFrame()
     
-    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?param=peak_current&producer=flash&format=json&starttime={starttime}&endtime={endtime}&latlon={latlon}:{maxdistance}".format(**args)
+    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?param=peak_current&producer=flash&format=ascii&separator=;&starttime={starttime}&endtime={endtime}&latlon={latlon}:{maxdistance}".format(**args)
 
-    logging.debug('Using url: {}'.format(url))
+    #url = "http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?param=time,peak_current&producer=flash&format=ascii&separator=;&starttime=2017-06-08T00:00:00&endtime=2017-06-08T18:00:00&latlon=57.1324,24.3574:30&timeformat=epoch&tz=local"
     
-    with urllib.request.urlopen(url, timeout=600) as u:
-        count = len(json.loads(u.read().decode("utf-8")))
+    logging.debug('Using url: {}'.format(url))
+
+    rawdata = []
+    try:
+        with urllib.request.urlopen(url, timeout=600) as u:
+            rawdata = u.read().decode("utf-8")
+    except Exception as e:
+        logging.error(e)
 
     logging.debug('Flash data loaded')
-    return count
+
+    if len(rawdata) == 0:
+        return pd.DataFrame()
+    
+    obsf = StringIO(rawdata)    
+    obs_df = pd.read_csv(obsf, sep=";", header=None)
+    obs_df.rename(columns={0:'time'}, inplace=True)
+
+    return obs_df
         
 def get_ground_obs(params, args):
     """
@@ -157,7 +147,7 @@ def get_ground_obs(params, args):
     return metadata, data (list)
     """
 
-    url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlons={latlons}&starttime={starttime}&endtime={endtime}&timestep=60&param={params}&maxdistance={maxdistance}'.format(**args)
+    url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&starttime={starttime}&endtime={endtime}&timestep=60&param=stationname,{params}&maxdistance={maxdistance}&numberofstations=5'.format(**args)
     
     logging.debug('Loading data from SmartMet Server...')
     logging.debug('Using url: {}'.format(url))
@@ -168,14 +158,13 @@ def get_ground_obs(params, args):
     logging.debug('Observations loaded')
     
     if len(rawdata) == 0:
-        logging.error('No data for location {} and time {}'.format(args['latlon'], datetime.fromtimestamp(args['endtime']).strftime('%Y-%m-%d %H:%M:%S')))
-        raise ValueError('No data found')
+        raise ValueError('No data for location {} and time {}'.format(args['latlon'], args['endtime']))
 
     obsf = StringIO(rawdata)    
     obs_df = pd.read_csv(obsf, sep=";", header=None)
+    obs_df.rename(columns={1:'time'}, inplace=True)
 
     return obs_df
-    
 
 def process_timerange(starttime, endtime, params, producer, latlons, ids):
 
@@ -195,67 +184,89 @@ def process_timerange(starttime, endtime, params, producer, latlons, ids):
     f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)    
     filt_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True, uniq=True)
 
+    latlons = set()
+    for row in filt_metadata:
+        latlons.add(str(row[3])+','+str(row[2]))
+                    
     logging.info('There are {} (of total {}) lines to process...'.format(len(filt_metadata), len(l_metadata)))    
 
     if len(filt_metadata) == 0:
         return 0
-    
+
     # Create url and get data
     apikey = '9fdf9977-5d8f-4a1f-9800-d80a007579c9'
-
-    args = {
-        'latlons': ','.join(latlons),
-        'params': ','.join(params),
-        'starttime' : startstr,
-        'endtime': endstr,
-        'producer': options.producer,
-        'apikey' : apikey,
-        'maxdistance' : 100000 # default
-    }
-    # flash_start = starttime - timedelta(hours=1)
-    # flash_args = {
-    #     'starttime' : flash_start.strftime('%Y-%m-%d %H:%M:%S'),
-    #     'endtime' : endstr,
-    #     'latlon' : latlon,
-    #     'apikey' : apikey,
-    #     'maxdistance' : 30000 # Harmonie FlashMultiplicity value
-    # }
-    prec_args = {
-        'producer' : options.producer,
-        'starttime' : startstr,
-        'endtime' : endstr,
-        'latlon' : ','.join(latlons),
-        'apikey' : apikey,
-        'maxdistance' : 50000 # Default
-    }
-
-    try:
-        obs_df = get_ground_obs(params, args)
-        metadata, data = io.filter_ground_obs(obs_df, filt_metadata)
-        #data[0].append(get_flashes(flash_args))
-        #data[0] += get_prec_sum(prec_args)
-    except timeout:
-        logging.error('Timeout while fetching data...')
-        return 0
-    except ValueError as e:
-        logging.error(e)
-        return 0    
-                
-    data = np.array(data).astype(np.float)
+    count = 0
     
-    logging.debug('Dataset size: {}'.format(data.shape))
-    logging.debug('Metadata size: {}'.format(np.array(metadata).shape))
+    for latlon in latlons:
 
-    if len(data) == 0:
-        return 0
-    else:
-        # Save to database        
-        header = params[2:] #+ ['count(flash:60:0)', 'max(sum_t(precipitation1h:180:0))', 'max(sum_t(precipitation1h:360:0))']
+        label_metadata = io.filter_labels_by_latlon(filt_metadata, latlon)
+        starttime, endtime = io.get_timerange(label_metadata)
         
-        logging.debug('Inserting new dataset to db...')
-        count = a.add_rows('feature', header, data, metadata, options.dataset)
+        startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
+        endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
+        
+        args = {
+            'latlon': latlon,
+            'params': ','.join(params),
+            'starttime' : startstr,
+            'endtime': endstr,
+            'producer': options.producer,
+            'apikey' : apikey,
+            'maxdistance' : 100000 
+        }
+        
+        flash_start = starttime - timedelta(hours=1)
+        flash_args = {
+            'starttime' : flash_start.strftime('%Y-%m-%dT%H:%M:%S'),
+            'endtime' : endstr,
+            'latlon' : latlon,
+            'apikey' : apikey,
+            'maxdistance' : 30 # Harmonie FlashMultiplicity value in km
+        }
 
-        return count
+        prec_start = starttime - timedelta(hours=6)
+        prec_args = {
+            'producer' : options.producer,
+            'starttime' : prec_start.strftime('%Y-%m-%dT%H:%M:%S'),
+            'endtime' : endstr,
+            'latlon' : latlon,
+            'apikey' : apikey,
+            'maxdistance' : 100000 
+        }
+
+        #try:
+        obs_df = get_ground_obs(params, args)
+        obs_df = io.find_best_station(obs_df)        
+        metadata_df, data_df = io.filter_ground_obs(obs_df, label_metadata)
+            
+        flash_df = get_flashes(flash_args)
+        data_df = io.filter_flashes(flash_df, data_df)
+            
+        prec_df = get_prec_sum(prec_args)
+        prec_df = io.find_best_station(prec_df)
+        data_df = io.filter_precipitation(prec_df, data_df)
+
+        #except timeout:
+        #    logging.error('Timeout while fetching data...')
+        #    continue
+        #except ValueError as e:
+        #    logging.error(e)
+        #    continue
+
+        data = np.array(data_df.drop(columns=['time', 2])).astype(np.float)
+        metadata = metadata_df.as_matrix()
+        
+        logging.debug('Dataset size: {}'.format(data.shape))
+        logging.debug('Metadata size: {}'.format(np.array(metadata).shape))
+
+        if len(data) > 0:
+            # Save to database        
+            header = params[2:] + ['count(flash:60:0)', 'max(sum_t(precipitation1h:180:0))', 'max(sum_t(precipitation1h:360:0))']
+        
+            logging.debug('Inserting new dataset to db...')
+            count += a.add_rows('feature', header, data, metadata, options.dataset)
+
+    return count
 
 def main():
     """
