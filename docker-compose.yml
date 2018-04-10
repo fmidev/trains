@@ -62,7 +62,7 @@ services:
       - ~:/root:ro
       - ~/trains:/a
     image: tervo/ml:cpu    
-    command: python -u bin/lr.py --dataset ${DATASET:-trains-10d-sample} --starttime 2018-01-07 --endtime 2018-01-08 --logging_level DEBUG
+    command: python -u bin/lr.py --dataset ${DATASET:-trains-10d-sample} --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-INFO}
 #############
   clean_db:
     volumes:
