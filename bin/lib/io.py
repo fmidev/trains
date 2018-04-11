@@ -352,6 +352,50 @@ class IO:
 
         return filtered_labels_metadata, filtered_labels
 
+    def filter_train_type(self, labels_metadata, labels, traintypes, sum_types = False):
+        """
+        Filter traintypes from metadata
+        
+        labels_metadata : list like
+                          labels metadata
+        labels          : np array
+                          labels
+        train_types     : list
+                          list of following options: [0,1,2,3]
+
+                          train_types = {'K': 0,
+                                         'L': 1,
+                                         'T': 2,
+                                         'M': 3}
+        sum_types       : bool
+                         if True, sum different train types together (default False)
+                
+        returns : np array, np array
+                  labels metadata, labels
+        """
+        if len(labels_metadata) == 0:
+            return labels_metadata, labels
+
+        labels_df = pd.DataFrame(labels)
+        mask = labels_df.loc[:,3].isin(traintypes)
+
+        filt_labels_df = labels_df[(mask)]
+        filt_labels_metadata = np.array(labels_metadata)[(mask)]
+
+        if sum_types:
+            meta_df = pd.DataFrame(labels_metadata).rename(columns={0:'m0', 1: 'm1', 2: 'm2', 3:'m3'})
+            
+            join_df = pd.concat([meta_df, filt_labels_df], axis=1)            
+            join_df = join_df.groupby(['m0','m1'], as_index=False)[0,1,2].sum()
+            meta_df.drop_duplicates(['m0','m1'], inplace=True)
+            join_df = pd.merge(join_df, meta_df, how='inner', on=['m0', 'm1'], validate='one_to_one')
+
+            filt_labels_metadata = join_df.loc[:,['m0','m1','m2','m3']].as_matrix()
+            filt_labels_df = join_df.loc[:,[0,1,2]]
+                    
+        return filt_labels_metadata, filt_labels_df.as_matrix()
+
+    
     def filter_labels_by_latlon(self, labels_metadata, latlon):
         """
         Filter labels by latlon
