@@ -226,10 +226,9 @@ def process_timerange(starttime, endtime, params, producer):
             
             prec_df = get_prec_sum(prec_args)
             prec_df = io.find_best_station(prec_df)
-            data_df = io.filter_precipitation(prec_df, data_df)        
-        except timeout:
-            logging.error('Timeout while fetching data...')
-            continue
+            data_df = io.filter_precipitation(prec_df, data_df)
+            
+            data_df.fillna(-99, inplace=True)
         except ValueError as e:
             logging.error(e)
             continue
@@ -242,9 +241,7 @@ def process_timerange(starttime, endtime, params, producer):
 
         if len(data) > 0:
             # Save to database        
-            header = params[2:] + ['count(flash:60:0)', 'sum_t(precipitation1h:180:0)', 'sum_t(precipitation1h:360:0)']
-        
-            logging.debug('Inserting new dataset to db...')
+            header = params[2:] + ['count(flash:60:0)', 'sum_t(precipitation1h:180:0)', 'sum_t(precipitation1h:360:0)']        
             count += a.add_rows('feature', header, data, metadata, options.dataset)
 
         if placecount%10 == 0:
