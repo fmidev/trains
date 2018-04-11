@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import sys
+import os
 import argparse
 import logging
 from datetime import datetime, timedelta
@@ -17,26 +18,6 @@ import pandas as pd
 
 from mlfdb import mlfdb
 import lib.io
-
-def get_latlons(a, dataset):
-    """
-    Get latlons
-    
-    dataset : str
-              dataset name
-    
-    return : list, struct
-             list of latlons, struct of ids ids{'latlon': xx}
-    """
-    latlons = []
-    ids = dict()
-    locations = a.get_locations_by_dataset(dataset)
-    for loc in locations:
-        latlon = str(loc[3])+','+str(loc[2])
-        latlons.append(latlon)
-        ids[latlon] = loc[0]
-        
-    return latlons, ids
 
 
 def split_timerange(starttime, endtime, days=1, hours=0, timestep=60):
@@ -166,14 +147,15 @@ def get_ground_obs(params, args):
 
     return obs_df
 
-def process_timerange(starttime, endtime, params, producer, latlons, ids):
+def process_timerange(starttime, endtime, params, producer):
 
     """
     Process timerange
     """
     a = mlfdb.mlfdb(options.db_config_file)
     io = lib.io.IO()
-
+    process_id = os.getpid()
+    
     startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
     endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
     
@@ -196,9 +178,9 @@ def process_timerange(starttime, endtime, params, producer, latlons, ids):
     # Create url and get data
     apikey = '9fdf9977-5d8f-4a1f-9800-d80a007579c9'
     count = 0
-    
+    placecount = 0
     for latlon in latlons:
-
+        placecount += 1
         label_metadata = io.filter_labels_by_latlon(filt_metadata, latlon)
         starttime, endtime = io.get_timerange(label_metadata)
         
@@ -217,8 +199,8 @@ def process_timerange(starttime, endtime, params, producer, latlons, ids):
         
         flash_start = starttime - timedelta(hours=1)
         flash_args = {
-            'starttime' : flash_start.strftime('%Y-%m-%dT%H:%M:%S'),
-            'endtime' : endstr,
+            'starttime' : flash_start.timestamp(), #strftime('%Y-%m-%dT%H:%M:%S'),
+            'endtime' : endtime.timestamp(),
             'latlon' : latlon,
             'apikey' : apikey,
             'maxdistance' : 30 # Harmonie FlashMultiplicity value in km
@@ -261,11 +243,14 @@ def process_timerange(starttime, endtime, params, producer, latlons, ids):
 
         if len(data) > 0:
             # Save to database        
-            header = params[2:] + ['count(flash:60:0)', 'max(sum_t(precipitation1h:180:0))', 'max(sum_t(precipitation1h:360:0))']
+            header = params[2:] + ['count(flash:60:0)', 'sum_t(precipitation1h:180:0)', 'sum_t(precipitation1h:360:0)']
         
             logging.debug('Inserting new dataset to db...')
             count += a.add_rows('feature', header, data, metadata, options.dataset)
 
+        if placecount%10 == 0:
+            logging.info('Process {}: {}/{} locations processed ({} rows inserted)...'.format(process_id, placecount, len(latlons), count))
+    
     return count
 
 def main():
@@ -292,14 +277,11 @@ def main():
         logging.info('Removing old dataset...')
         a.remove_dataset(options.dataset, type='feature')
 
-    # Get locations and create coordinate list for SmartMet
-    latlons, ids = get_latlons(a, options.dataset)
-    
     # Split time range to chunks and process them in paraller
     start = datetime.strptime(options.starttime, '%Y-%m-%d')
     end = datetime.strptime(options.endtime, '%Y-%m-%d')
 
-    res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, options.producer, latlons, ids)) for chunk in split_timerange(start, end, days=1, hours=0)]
+    res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, options.producer)) for chunk in split_timerange(start, end, days=1, hours=0)]
     total_count = [p.get() for p in res]
 
     logging.info('Added {} rows observations to db.'.format(sum(total_count)))

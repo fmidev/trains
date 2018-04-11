@@ -386,7 +386,7 @@ class IO:
                   starttime, endtime
         """
 
-        label_metadata.sort_values(0, inplace=True)
+        label_metadata = label_metadata.sort_values(0)
         start = dt.datetime.fromtimestamp(int(label_metadata.iloc[0,0]))
         end = dt.datetime.fromtimestamp(int(label_metadata.iloc[-1,0]))
         return start,end
@@ -501,6 +501,9 @@ class IO:
         
         returns : DataFrame
         """
+        if len(obs_df) == 0:
+            return obs_df
+        
         bestrow = obs_df.apply(lambda x: x.count(), axis=1).idxmax()
         beststation = obs_df.loc[bestrow,0]
 
