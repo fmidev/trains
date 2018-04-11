@@ -215,25 +215,24 @@ def process_timerange(starttime, endtime, params, producer):
             'apikey' : apikey,
             'maxdistance' : 100000 
         }
-
-        #try:
-        obs_df = get_ground_obs(params, args)
-        obs_df = io.find_best_station(obs_df)        
-        metadata_df, data_df = io.filter_ground_obs(obs_df, label_metadata)
+        
+        try:
+            obs_df = get_ground_obs(params, args)
+            obs_df = io.find_best_station(obs_df)        
+            metadata_df, data_df = io.filter_ground_obs(obs_df, label_metadata)
             
-        flash_df = get_flashes(flash_args)
-        data_df = io.filter_flashes(flash_df, data_df)
+            flash_df = get_flashes(flash_args)
+            data_df = io.filter_flashes(flash_df, data_df)
             
-        prec_df = get_prec_sum(prec_args)
-        prec_df = io.find_best_station(prec_df)
-        data_df = io.filter_precipitation(prec_df, data_df)
-
-        #except timeout:
-        #    logging.error('Timeout while fetching data...')
-        #    continue
-        #except ValueError as e:
-        #    logging.error(e)
-        #    continue
+            prec_df = get_prec_sum(prec_args)
+            prec_df = io.find_best_station(prec_df)
+            data_df = io.filter_precipitation(prec_df, data_df)        
+        except timeout:
+            logging.error('Timeout while fetching data...')
+            continue
+        except ValueError as e:
+            logging.error(e)
+            continue
 
         data = np.array(data_df.drop(columns=['time', 2])).astype(np.float)
         metadata = metadata_df.as_matrix()
