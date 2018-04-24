@@ -5,6 +5,7 @@ from os import listdir
 from os.path import isfile, join
 from sklearn.externals import joblib
 from keras.models import Model, model_from_yaml
+import tensorflow as tf
 from google.cloud import storage
 import boto3
 import random
@@ -138,7 +139,13 @@ class IO:
         with open(file_to_open, 'r', encoding='utf-8') as f: 
             lines = f.read().splitlines()
 
-        return lines
+        params, names = [], []
+        for line in lines:
+            param, name = line.split(';')
+            params.append(param)
+            names.append(name)
+            
+        return params, names
 
     def save_model(self, model_filename, weights_filename, history_filename, model, history):
         """ 
@@ -190,6 +197,20 @@ class IO:
         
         return model, history
 
+    def export_tf_model(self, sess, export_dir, inputs, outputs):
+        """
+        Save tensor flow model
+        """
+        logging.info('Exporting tf model to {}...'.format(export_dir))
+        tf.saved_model.simple_save(
+            sess,
+            export_dir,
+            inputs,
+            outputs,
+            legacy_init_op=None
+        )
+
+    
     def get_files_to_process(self, path, suffix='csv', force_local=False):
         """
         List files in given directory location. If google cloud bucket is
@@ -268,6 +289,7 @@ class IO:
             logging.info('Endtime not set or malformed')
 
         return starttime, endtime
+
     
     #
     # TRAINS
@@ -352,7 +374,10 @@ class IO:
 
         return filtered_labels_metadata, filtered_labels
 
-    def filter_train_type(self, labels_metadata, labels, traintypes, sum_types = False):
+    def filter_train_type(self, labels_metadata=[], labels=[],
+                          labels_df=[], traintypes=[], sum_types = False,
+                          train_type_column='train type',
+                          sum_columns=['train count', 'late minutes', 'total late minutes']):
         """
         Filter traintypes from metadata
         
@@ -373,28 +398,48 @@ class IO:
         returns : np array, np array
                   labels metadata, labels
         """
-        if len(labels_metadata) == 0:
-            return labels_metadata, labels
 
-        labels_df = pd.DataFrame(labels)
-        mask = labels_df.loc[:,3].isin(traintypes)
-
-        filt_labels_df = labels_df[(mask)]
-        filt_labels_metadata = np.array(labels_metadata)[(mask)]
-
-        if sum_types:
-            meta_df = pd.DataFrame(labels_metadata).rename(columns={0:'m0', 1: 'm1', 2: 'm2', 3:'m3'})
+        if len(labels_df) > 0:
+            mask = labels_df.loc[:,train_type_column].isin(traintypes)
             
-            join_df = pd.concat([meta_df, filt_labels_df], axis=1)            
-            join_df = join_df.groupby(['m0','m1'], as_index=False)[0,1,2].sum()
-            meta_df.drop_duplicates(['m0','m1'], inplace=True)
-            join_df = pd.merge(join_df, meta_df, how='inner', on=['m0', 'm1'], validate='one_to_one')
+            filt_labels_df = labels_df[(mask)]
 
-            filt_labels_metadata = join_df.loc[:,['m0','m1','m2','m3']].as_matrix()
-            filt_labels_df = join_df.loc[:,[0,1,2]]
+            if sum_types:
+                d = {}
+                for col in sum_columns:
+                    d[col] = ['sum']
+                d['lat'] = ['max']
+                d['lon'] = ['max']
+                
+                filt_labels_df = filt_labels_df.groupby(['location id','time'], as_index=False).agg(d)
+                filt_labels_df.columns = filt_labels_df.columns.droplevel(1)
+                filt_labels_df.drop_duplicates(['location id','time'], inplace=True)
+                
+            return filt_labels_df
+            
+        elif len(labels_metadata) > 0:
+            labels_df = pd.DataFrame(labels)
+            mask = labels_df.loc[:,3].isin(traintypes)
+            
+            filt_labels_df = labels_df[(mask)]
+            filt_labels_metadata = np.array(labels_metadata)[(mask)]
+
+            if sum_types:
+                meta_df = pd.DataFrame(labels_metadata).rename(columns={0:'m0', 1: 'm1', 2: 'm2', 3:'m3'})
+            
+                join_df = pd.concat([meta_df, filt_labels_df], axis=1)            
+                join_df = join_df.groupby(['m0','m1'], as_index=False)[0,1,2].sum()
+                meta_df.drop_duplicates(['m0','m1'], inplace=True)
+                join_df = pd.merge(join_df, meta_df, how='inner', on=['m0', 'm1'], validate='one_to_one')
+                
+                filt_labels_metadata = join_df.loc[:,['m0','m1','m2','m3']].as_matrix()
+                filt_labels_df = join_df.loc[:,[0,1,2]]
                     
-        return filt_labels_metadata, filt_labels_df.as_matrix()
-
+            return filt_labels_metadata, filt_labels_df.as_matrix()
+    
+        else:
+            return labels_metadata, labels
+    
     
     def filter_labels_by_latlon(self, labels_metadata, latlon):
         """
@@ -431,8 +476,8 @@ class IO:
         """
 
         label_metadata = label_metadata.sort_values(0)
-        start = dt.datetime.fromtimestamp(int(label_metadata.iloc[0,0]))
-        end = dt.datetime.fromtimestamp(int(label_metadata.iloc[-1,0]))
+        start = dt.datetime.fromtimestamp(int(label_metadata.iloc[0,1]))
+        end = dt.datetime.fromtimestamp(int(label_metadata.iloc[-1,1]))
         return start,end
     
     def filter_ground_obs(self, obs, label_metadata):
@@ -481,7 +526,7 @@ class IO:
                   data with appended values
         """
         if len(flash_df) == 0:
-            data_df.loc[:,'flash'] = 0
+            data_df['flash'] = 0
             return data_df
 
         data_df = data_df.sort_values('time')
@@ -555,22 +600,52 @@ class IO:
         obs_df = obs_df.drop(columns=[0])
     
         return obs_df
+
+    def sort_columns_by_list(self, df, cols):
+        """
+        Sort columns based on given list
+        
+        df : DataFrame
+             data frame
+        cols : list
+               list of column names
+        
+        returns : DataFrame
+        """
+
+        pass
+    
+    def sort_by_latlon(self, df, lat_column='lat', lon_column='lon'):
+        """
+        Sort pandas dataframe by location
+        
+        df : DataFrame
+             pandas dataframe 
+        lat_column : str
+                     column name where latitude is stored
+        lon_column : str
+                     column name where longitude is stored
+        
+        returns : DataFrame
+        """
+
+        return df.assign(f = df[lat_column] + df[lon_column]).sort_values(by=['f', 'time']).drop('f', axis=1)
         
     
     def _filter_obs(self, obs, labels_df):
         """
         Filter observations based on metadata (private method)       
-        """                
+        """
         # Create comparison hashes
-        labels_df.loc[:,0] = labels_df.loc[:,0].astype({0: int})
+        labels_df.loc[:,1] = labels_df.loc[:,1].astype(int)
         obs.loc[:,'time'] = obs.loc[:,'time'].astype(int)    
 
         # Mask observations
-        obs_mask = np.isin(obs.loc[:,'time'], labels_df.loc[:,0])
+        obs_mask = np.isin(obs.loc[:,'time'], labels_df.loc[:,1])
         filt_obs = obs[(obs_mask)]
 
         # Filter labels metadata 
-        labels_mask = np.isin(labels_df.loc[:,0], obs.loc[:,'time'])
+        labels_mask = np.isin(labels_df.loc[:,1], obs.loc[:,'time'])
         filt_labels_metadata = labels_df[(labels_mask)]
         
         return filt_labels_metadata, filt_obs

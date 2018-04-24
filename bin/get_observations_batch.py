@@ -17,6 +17,7 @@ from io import StringIO
 import pandas as pd
 
 from mlfdb import mlfdb
+from ml_feature_db.api.mlfdb import mlfdb as db
 import lib.io
 
 
@@ -134,7 +135,6 @@ def get_ground_obs(params, args):
     logging.debug('Using url: {}'.format(url))
 
     with urllib.request.urlopen(url, timeout=6000) as u:
-        #rawdata = json.loads(u.read().decode("utf-8"))
         rawdata = u.read().decode("utf-8")
     logging.debug('Observations loaded')
     
@@ -147,12 +147,13 @@ def get_ground_obs(params, args):
 
     return obs_df
 
-def process_timerange(starttime, endtime, params, producer):
+def process_timerange(starttime, endtime, params, param_names, producer):
 
     """
     Process timerange
     """
-    a = mlfdb.mlfdb(options.db_config_file)
+    #a = mlfdb.mlfdb(options.db_config_file)
+    a = db.mlfdb(options.db_config_file)
     io = lib.io.IO()
     process_id = os.getpid()
     
@@ -162,9 +163,13 @@ def process_timerange(starttime, endtime, params, producer):
     logging.info('Processing time {} - {}...'.format(startstr, endstr))
 
     # Get labels, features and filter labels that do not have features
-    l_metadata, l_header, l_data = a.get_rows(options.dataset, rowtype='label', starttime=starttime, endtime=endtime)
-    f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)    
-    filt_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True, uniq=True)
+    try:
+        l_metadata, l_header, l_data = a.get_rows(options.dataset, rowtype='label', starttime=starttime, endtime=endtime)
+        f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)    
+        filt_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True, uniq=True)
+    except ValueError as e:
+        logging.debug(e)
+        return 0
 
     latlons = set()
     for row in filt_metadata:
@@ -183,7 +188,6 @@ def process_timerange(starttime, endtime, params, producer):
         placecount += 1
         label_metadata = io.filter_labels_by_latlon(filt_metadata, latlon)
         starttime, endtime = io.get_timerange(label_metadata)
-        
         startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
         endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
         
@@ -235,14 +239,14 @@ def process_timerange(starttime, endtime, params, producer):
 
         data = np.array(data_df.drop(columns=['time', 2])).astype(np.float)
         metadata = metadata_df.as_matrix()
-        
+
         logging.debug('Dataset size: {}'.format(data.shape))
         logging.debug('Metadata size: {}'.format(np.array(metadata).shape))
 
         if len(data) > 0:
             # Save to database        
-            header = params[2:] + ['count(flash:60:0)', 'sum_t(precipitation1h:180:0)', 'sum_t(precipitation1h:360:0)']        
-            count += a.add_rows('feature', header, data, metadata, options.dataset)
+            header = param_names[2:] + ['count_flash', 'precipitation3h', 'precipitation6h']
+            count += a.add_rows('feature', header, data, metadata, options.dataset, time_column=1, loc_column=0)
 
         if placecount%10 == 0:
             logging.info('Process {}: {}/{} locations processed ({} rows inserted)...'.format(process_id, placecount, len(latlons), count))
@@ -267,7 +271,7 @@ def main():
 
     a = mlfdb.mlfdb(options.db_config_file)
     io = lib.io.IO()    
-    params = io.read_parameters('cnf/parameters.txt')
+    params, param_names = io.read_parameters('cnf/parameters.txt')
 
     if options.replace:
         logging.info('Removing old dataset...')
@@ -277,7 +281,7 @@ def main():
     start = datetime.strptime(options.starttime, '%Y-%m-%d')
     end = datetime.strptime(options.endtime, '%Y-%m-%d')
 
-    res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, options.producer)) for chunk in split_timerange(start, end, days=1, hours=0)]
+    res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, param_names, options.producer)) for chunk in split_timerange(start, end, days=1, hours=0)]
     total_count = [p.get() for p in res]
 
     logging.info('Added {} rows observations to db.'.format(sum(total_count)))

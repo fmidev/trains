@@ -71,4 +71,11 @@ services:
     image: tervo/ml:cpu_local    
     command: python -u bin/clean_duplicates.py --dataset ${DATASET:-trains-10d-sample} --logging_leve ${LOGGING:-INFO} --count 29
 #############
+  vis:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+    image: tervo/ml:cpu
+    command: python -u bin/visualize_data.py --dataset ${DATASET:-trains-10d-sample} --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-INFO} --save_path labels_vis_1_0 --what ${WHAT:-histograms,history}
+    
 
