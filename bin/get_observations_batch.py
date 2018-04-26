@@ -16,8 +16,8 @@ import multiprocessing
 from io import StringIO
 import pandas as pd
 
-from mlfdb import mlfdb
-from ml_feature_db.api.mlfdb import mlfdb as db
+from mlfdb import mlfdb as db
+# from ml_feature_db.api.mlfdb import mlfdb as db
 import lib.io
 
 
@@ -315,7 +315,7 @@ if __name__=='__main__':
                         help='Timestep of observations in minutes')
     parser.add_argument('--producer',
                         type=str,
-                        default='opendata',
+                        default='fmi',
                         help='Data producer')
     parser.add_argument('--replace',
                         action='store_true',
