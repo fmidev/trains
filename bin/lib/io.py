@@ -6,7 +6,7 @@ from os.path import isfile, join
 from sklearn.externals import joblib
 from keras.models import Model, model_from_yaml
 import tensorflow as tf
-from google.cloud import storage
+
 import boto3
 import random
 import pickle
@@ -197,18 +197,24 @@ class IO:
         
         return model, history
 
-    def export_tf_model(self, sess, export_dir, inputs, outputs):
+    def export_tf_model(self, sess, export_dir, inputs, outputs, serving_input_fn=None):
         """
         Save tensor flow model
         """
         logging.info('Exporting tf model to {}...'.format(export_dir))
-        tf.saved_model.simple_save(
-            sess,
-            export_dir,
-            inputs,
-            outputs,
-            legacy_init_op=None
+        tf.estimator.Estimator.export_savedmodel(
+            export_dir_base=export_dir,
+            serving_input_receiver_fn=serving_input_fn
         )
+
+        
+        # tf.saved_model.simple_save(
+        #     sess,
+        #     export_dir,
+        #     inputs,
+        #     outputs,
+        #     legacy_init_op=None
+        # )
 
     
     def get_files_to_process(self, path, suffix='csv', force_local=False):
@@ -650,7 +656,7 @@ class IO:
         
         return filt_labels_metadata, filt_obs
 
-    def _calc_prec_sums(self, obs):
+    def _calc_prec_sums(self, obs, prec_column=5):
         """
         Calculate 3h and 6h prec sums (private method)
         """
@@ -661,8 +667,8 @@ class IO:
         obs.loc[:,'6hsum'] = -99
         
         for h,values in obs.iterrows():
-            sum_3h.append(values[5])
-            sum_6h.append(values[5])
+            sum_3h.append(values[prec_column])
+            sum_6h.append(values[prec_column])
 
             if len(sum_3h) > 3:
                 sum_3h.pop(0)
@@ -673,7 +679,70 @@ class IO:
                 obs.loc[h, '6hsum'] = sum(sum_6h)
 
         return obs
+
+    def df_to_serving_json(self, df):
+        """
+        Convert pandas dataframe to serving json
+        
+        df : DataFrame
+             dataframe to convert
+
+        return str
+        """
+
+        df.drop(columns=['time','place'], inplace=True)
+        js = '{"instances": ['
+        for h,values in df.iterrows():
+            js += '{"X": ['+','.join(list(map(str,values)))+']},'
+        js += ']}'
+
+        return js
+
+
+    def df_to_serving_dict(self, df):
+        df.drop(columns=['time','place'], inplace=True)
+        instances = []
+        for h,values in df.iterrows():
+            instances.append({"X": values})
+
+        return instances
+        
     
+    def predict_json(self, project, model, instances, version=None):
+        """Send json data to a deployed model for prediction.
+    
+        Args:
+        project (str): project where the Cloud ML Engine Model is deployed.
+        model (str): model name.
+        instances ([Mapping[str: Any]]): Keys should be the names of Tensors
+            your deployed model expects as inputs. Values should be datatypes
+            convertible to Tensors, or (potentially nested) lists of datatypes
+            convertible to tensors.
+        version: str, version of the model to target.
+        Returns:
+        Mapping[str: any]: dictionary of prediction results defined by the
+            model.
+        """
+        # Create the ML Engine service object.
+        # To authenticate set the environment variable
+        # GOOGLE_APPLICATION_CREDENTIALS=<path_to_service_account_file>
+        
+        service = discovery.build('ml', 'v1')
+        name = 'projects/{}/models/{}'.format(project, model)
+        
+        if version is not None:
+            name += '/versions/{}'.format(version)
+        
+        response = service.projects().predict(
+            name=name,
+            body={'instances': instances}
+        ).execute()
+
+        if 'error' in response:
+            raise RuntimeError(response['error'])
+        
+        return response['predictions']
+
     #
     # SASSE
     #     

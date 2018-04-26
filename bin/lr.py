@@ -6,6 +6,7 @@ import json
 import itertools
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.estimator.export import export
 
 from sklearn.model_selection import train_test_split
 
@@ -14,6 +15,92 @@ from ml_feature_db.api.mlfdb import mlfdb as db
 from lib import io as _io
 from lib import viz as _viz
 
+# def serving_input_receiver_fn():
+#     serialized_tf_example = tf.placeholder(dtype=tf.string, shape=[None], name='input_tensors')
+#     receiver_tensors      = {"X": serialized_tf_example}
+#     feature_spec          = {"X": tf.FixedLenFeature([29],tf.float32)}
+#     features              = tf.parse_example(serialized_tf_example, feature_spec)
+#     return tf.estimator.export.ServingInputReceiver(features, receiver_tensors)
+
+def serving_input_receiver_fn():
+    """Build the serving inputs."""
+    
+    # The outer dimension (None) allows us to batch up inputs for
+    # efficiency. However, it also means that if we want a prediction
+    # for a single instance, we'll need to wrap it in an outer list.
+    inputs = {'X': tf.placeholder(dtype=tf.float64)}
+    
+    #inputs = {}
+    #for feat in get_input_columns():
+    #    inputs[feat.name] = tf.placeholder(shape=[None], dtype=feat.dtype)
+
+    return tf.estimator.export.ServingInputReceiver(inputs, inputs)    
+
+
+def lr(features, labels, mode, params):
+    """
+    model function for linear regression
+    """
+    # Define parameters
+    #batch_size, n_dim = features.shape
+    
+    # Define placeholders for input
+#    X = tf.placeholder(tf.float32, name='X')
+#    y = tf.placeholder(tf.float32, name='y')
+    if type(features) is dict:
+        print(features)
+        X = features['X']
+    else:
+        X = features
+    y = labels
+
+    train_losses, val_losses = [], []
+            
+    W = tf.get_variable("weights", (params['n_dim'], 1),
+                        initializer=tf.random_normal_initializer(),
+                        dtype=tf.float64)
+    b = tf.get_variable("bias", (1, ),
+                        initializer=tf.constant_initializer(0.0),
+                        dtype=tf.float64)
+    y_pred = tf.matmul(X, W) + b
+
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        export_outputs = {
+            'predict_output': tf.estimator.export.PredictOutput(
+                {"pred_output": y_pred}
+            )}
+        predictions_dict = {"late_minutes": y_pred}
+        # In `PREDICT` mode we only need to return predictions.
+        return tf.estimator.EstimatorSpec(
+            mode=mode,
+            predictions={"y_pred": y_pred},
+            export_outputs=export_outputs            
+        )
+    
+    # Define optimizer operation
+    loss = tf.reduce_sum((y - y_pred) ** 2 / params['n_samples'])
+    optimizer = tf.train.AdamOptimizer()
+
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        optimize = optimizer.minimize(
+            loss,
+            global_step=tf.train.get_global_step()
+        )
+        
+        return tf.estimator.EstimatorSpec(
+            mode=mode,
+            loss=loss,
+            train_op=optimize
+        )
+
+    # assert mode == tf.estimator.ModeKeys.EVAL
+    rmse = tf.metrics.root_mean_squared_error(labels, y_pred)
+    
+    return tf.estimator.EstimatorSpec(
+        mode=mode,
+        loss=loss,
+        eval_metric_ops={'rmse': rmse }
+    )
 
 def main():
     """
@@ -56,79 +143,53 @@ def main():
 
     target = l_data[:,0]
     X_train, X_test, y_train, y_test = train_test_split(f_data, l_data[:,0], test_size=0.33)
-    
-    # Define parameters
-    n_samples, n_dim = X_train.shape
+
+    # Define number of gradient descent loops
+    n_loops = 1000
     batch_size = 100
+    n_samples, n_dim = X_train.shape
+
+    model = tf.estimator.Estimator(
+        model_fn=lr,
+        params={
+            'n_samples': n_samples,
+            'n_dim' : n_dim
+        },
+        model_dir=options.log_dir
+    )
+
+    #    saver = tf.train.Saver()
+
+    model_filename = options.save_path+'/model_state.ckpt'
+    export_dir = options.save_path+'/serving'
+            
+    # Select random mini-batch
+    def input_train():
+        indices = np.random.choice(n_samples, batch_size)
+        X_batch, y_batch = X_train[indices], y_train[indices]
+        return X_batch, y_batch
+
+    def input_test():
+        indices = np.random.choice(len(X_test), batch_size)
+        X_batch, y_batch = X_test[indices], y_test[indices]
+        return X_batch, y_batch        
     
-    # Define placeholders for input
-    X = tf.placeholder(tf.float32, name='X')
-    y = tf.placeholder(tf.float32, name='y')
+    model.train(input_fn=input_train, steps=n_loops)
+    model.evaluate(input_fn=input_test, steps=1)
 
-    train_losses, val_losses = [], []
-    
-    # Define variables to be learned
-    with tf.variable_scope("linear-regression"):
-        
-        W = tf.get_variable("weights", (n_dim, 1),
-                            initializer=tf.random_normal_initializer())
-        b = tf.get_variable("bias", (1, ),
-                            initializer=tf.constant_initializer(0.0))
-        y_pred = tf.matmul(X, W) + b
-        loss = tf.reduce_sum((y - y_pred) ** 2 / n_samples)
+    #feature_spec = {"X": tf.FixedLenFeature([29],tf.float32)}
+    #feature_spec = {"X": tf.VarLenFeature(tf.float32)}
+    #feature_spec = tf.feature_column.make_parse_example_spec(get_input_columns())
+    #serving_input_fn = export.build_parsing_serving_input_receiver_fn(feature_spec)
 
-        # Define optimizer operation
-        optimizer = tf.train.AdamOptimizer()
-        optimize = optimizer.minimize(loss)
+    model.export_savedmodel(
+        export_dir,
+        serving_input_receiver_fn
+    )
+#    io.export_tf_model(sess, export_dir, inputs={'X': X}, outputs={'y': y_pred}, serving_input_fn=serving_input_receiver_fn)
 
-        # Define number of gradient descent loops
-        n_loops = 1000
-
-        init_op = tf.global_variables_initializer()
-        saver = tf.train.Saver()
-        model_filename = options.save_path+'/model_state.ckpt'
-        export_dir = options.save_path+'/serving'
-
-
-        def serving_input_receiver_fn():
-            """Build the serving inputs."""
-
-            # The outer dimension (None) allows us to batch up inputs for
-            # efficiency. However, it also means that if we want a prediction
-            # for a single instance, we'll need to wrap it in an outer list.
-            inputs = {"X": tf.placeholder(shape=[None, n_dim], dtype=tf.float32)}
-            return tf.estimator.export.ServingInputReceiver(inputs, inputs)
-
-        
-        with tf.Session() as sess:
-            # Initialize Variables in graph
-            sess.run(init_op)
-
-            for step_idx in range(n_loops):
-                # Select random mini-batch
-                indices = np.random.choice(n_samples, batch_size)
-                X_batch, y_batch = X_train[indices], y_train[indices]
-
-                # Perform a single gradient descent step
-                _, loss_val = sess.run([optimize, loss],
-                                       feed_dict={X: X_batch, y: y_batch})
-                val_loss_val = sess.run([loss],
-                                        feed_dict={X: X_test, y: y_test})
-                
-                train_losses.append(loss_val)
-                val_losses.append(val_loss_val)
-                
-                # Print training status
-                if step_idx % 100 == 0:
-                    saver.save(sess, model_filename)
-                    print("[{}] train loss: {}".format(step_idx, loss_val))
-                    print("[{}] test loss: {}".format(step_idx, val_loss_val))
-
-            W_val, b_val = sess.run([W, b])
-            io.export_tf_model(sess, export_dir, inputs={'X': X}, outputs={'y': y_pred})
-
-    filename = options.output_path + '/training_loss.png'
-    viz.plot_learning(np.array(train_losses), np.array(val_losses), filename)
+    # filename = options.output_path + '/training_loss.png'
+    # viz.plot_learning(np.array(train_losses), np.array(val_losses), filename)
         
     
 if __name__=='__main__':
@@ -138,6 +199,7 @@ if __name__=='__main__':
     parser.add_argument('--endtime', type=str, help='End time of the classification data interval')
     parser.add_argument('--save_path', type=str, default=None, help='Model save path and filename')
     parser.add_argument('--dataset', type=str, default=None, help='Dataset name')
+    parser.add_argument('--log_dir', type=str, default='/tmp/lr', help='Dataset name')
     parser.add_argument('--db_config_file',
                         type=str,
                         default=None,
