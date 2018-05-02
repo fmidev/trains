@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-import sys, re, tempfile
+import sys, re, tempfile, subprocess
 import numpy as np
 from os import listdir
 from os.path import isfile, join
 from sklearn.externals import joblib
 from keras.models import Model, model_from_yaml
 import tensorflow as tf
+
+import googleapiclient.discovery
 
 import boto3
 import random
@@ -544,13 +546,11 @@ class IO:
 
         return data_df        
     
-    def filter_precipitation(self, obs, data):
+    def filter_precipitation(self, data, prec_column=5):
         """
         Filter ground observations so that only train stations where trains
         have actually visited during current every hour are kept
         
-        obs : DataFrame
-               observations got from SmartMet Server
         data : DataFrame
                DataFrame where labels are appended to 
         
@@ -558,33 +558,9 @@ class IO:
                  data
         """
 
-        if len(obs) == 0:
-            data.loc[:,'3hsum'] = -99
-            data.loc[:,'6hsum'] = -99
-            return data
-
         # Go through data and calculate 3h and 6h sums
-        obs = self._calc_prec_sums(obs)
-
-        # Select correct vaues from obserations to every station and hour        
-        data.set_index('time', drop=False, inplace=True)
-        obs.loc[:,'time'] = obs.loc[:,'time'].astype(int)
-        obs.set_index('time', drop=False, inplace=True)        
-
-        result = pd.concat([data, obs.loc[:,['3hsum','6hsum']]], axis=1, join_axes=[data.index])
-        # print(obs)
-        # notfound = 0
-        # for h,values in data.iterrows():
-        #     try:
-        #         data.loc[h,'3hsum'] = obs.loc[h,'3hsum']
-        #         data.loc[h,'6hsum'] = obs.loc[h,'6hsum']
-        #     except KeyError:
-        #         notfound += 1            
-
-        # logging.debug('Prec sum is missing for {} (out of {}) time-points'.format(notfound, len(data)))
-        logging.debug("Obs shape: {} | result shape: {}".format(obs.shape, data.shape))
-
-        return result
+        data = self._calc_prec_sums(data, prec_column).iloc[6:]
+        return data
     
     
     def find_best_station(self, obs_df):
@@ -667,16 +643,22 @@ class IO:
         obs.loc[:,'6hsum'] = -99
         
         for h,values in obs.iterrows():
-            sum_3h.append(values[prec_column])
-            sum_6h.append(values[prec_column])
+            prec = values[prec_column]
+            if prec == -1: prec = 0
+            sum_3h.append(prec)
+            sum_6h.append(prec)
 
             if len(sum_3h) > 3:
                 sum_3h.pop(0)
-                obs.loc[h, '3hsum'] = sum(sum_3h)
+                _sum = sum(sum_3h)
+                if _sum < 0: _sum = -99
+                obs.loc[h, '3hsum'] = _sum
                 
             if len(sum_6h) > 6:
                 sum_6h.pop(0)
-                obs.loc[h, '6hsum'] = sum(sum_6h)
+                _sum = sum(sum_6h)
+                if _sum < 0: _sum = -99
+                obs.loc[h, '6hsum'] = _sum
 
         return obs
 
@@ -699,14 +681,34 @@ class IO:
         return js
 
 
-    def df_to_serving_dict(self, df):
+    def df_to_serving_file(self, df):
         df.drop(columns=['time','place'], inplace=True)
-        instances = []
-        for h,values in df.iterrows():
-            instances.append({"X": values})
+        tmp = tempfile.NamedTemporaryFile(delete=False)
 
-        return instances
+        i = 0
+        with open(tmp.name, 'w') as f:                
+            for h,values in df.iterrows():
+                i += 1
+                if i > 100:
+                    break
+                f.write('{"X": ['+','.join(list(map(str, values)))+']}\n')
+
         
+        return tmp.name        
+
+    def predict_gcloud_ml(self, model, version, x_file):
+        """
+        Predict 
+        """
+        cmd = 'gcloud --quiet ml-engine predict --model {model} --version {version} --json-instances {x_file}'.format(model=model, version=version, x_file=x_file)
+
+        logging.debug('Using cmd: {}'.format(cmd))
+        result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+        lines = result.stdout.decode('utf-8').split('\n')
+        ret = []
+        for line in lines[1:-1]:
+            ret.append(line[1:-1])
+        return ret
     
     def predict_json(self, project, model, instances, version=None):
         """Send json data to a deployed model for prediction.
@@ -727,7 +729,7 @@ class IO:
         # To authenticate set the environment variable
         # GOOGLE_APPLICATION_CREDENTIALS=<path_to_service_account_file>
         
-        service = discovery.build('ml', 'v1')
+        service = googleapiclient.discovery.build('ml', 'v1')
         name = 'projects/{}/models/{}'.format(project, model)
         
         if version is not None:
