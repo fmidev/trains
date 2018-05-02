@@ -168,11 +168,13 @@ def main():
 
     data = io._calc_prec_sums(data, prec_column='PrecipitationInstantTotal').fillna(-99)
 
-    serving = io.df_to_serving_json(data)
-    result = io.predict_json('trains', 'trains_lr', serving, version='tiny_subset_2')
-                          
-    print(data)
-    print(serving_json)
+    x_file = io.df_to_serving_file(data)
+    #with open(x_file, 'r') as f:
+    #    print(f.read())        
+    result = io.predict_gcloud_ml('trains_lr', 'tiny_subset_2', x_file)
+    print(result)
+    #print(data)
+    #print(serving_json)
     
 if __name__=='__main__':
 
