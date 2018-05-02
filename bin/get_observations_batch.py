@@ -60,12 +60,12 @@ def get_prec_sum(args):
     """
     url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timestep=60&starttime={starttime}&endtime={endtime}&param=stationname,time,place,lat,lon,precipitation1h&maxdistance={maxdistance}&numberofstations=5".format(**args)
 
-    logging.debug('Using url: {}'.format(url))
+    logging.info('Using url: {}'.format(url))
     
-    with urllib.request.urlopen(url, timeout=600) as u:
+    with urllib.request.urlopen(url, timeout=300) as u:
         rawdata = u.read().decode("utf-8")
 
-    logging.debug('Precipitation data loaded')
+    logging.info('Precipitation data loaded')
     
     if len(rawdata) == 0:
         return pd.DataFrame()
@@ -87,25 +87,25 @@ def get_flashes(args):
     """
 
     # Getting flashes is slow. Don't do it for winter times
-    #d = datetime.fromtimestamp(args['endtime'])
-    #if int(d.strftime('%m')) < 6 or int(d.strftime('%m')) > 8:
-    #    logging.debug('Not thunder storm season, returning 0 for flashes...')
-    #    return pd.DataFrame()
+    d = datetime.fromtimestamp(args['endtime'])
+    if int(d.strftime('%m')) < 6 or int(d.strftime('%m')) > 8:
+        logging.debug('Not thunder storm season, returning 0 for flashes...')
+        return pd.DataFrame()
     
     url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?param=peak_current&producer=flash&format=ascii&separator=;&starttime={starttime}&endtime={endtime}&latlon={latlon}:{maxdistance}".format(**args)
 
     #url = "http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?param=time,peak_current&producer=flash&format=ascii&separator=;&starttime=2017-06-08T00:00:00&endtime=2017-06-08T18:00:00&latlon=57.1324,24.3574:30&timeformat=epoch&tz=local"
     
-    logging.debug('Using url: {}'.format(url))
+    logging.info('Using url: {}'.format(url))
 
     rawdata = []
     try:
-        with urllib.request.urlopen(url, timeout=600) as u:
+        with urllib.request.urlopen(url, timeout=300) as u:
             rawdata = u.read().decode("utf-8")
     except Exception as e:
         logging.error(e)
 
-    logging.debug('Flash data loaded')
+    logging.info('Flash data loaded')
 
     if len(rawdata) == 0:
         return pd.DataFrame()
@@ -132,11 +132,11 @@ def get_ground_obs(params, args):
     url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&starttime={starttime}&endtime={endtime}&timestep=60&param=stationname,{params}&maxdistance={maxdistance}&numberofstations=5'.format(**args)
     
     logging.debug('Loading data from SmartMet Server...')
-    logging.debug('Using url: {}'.format(url))
+    logging.info('Using url: {}'.format(url))
 
-    with urllib.request.urlopen(url, timeout=6000) as u:
+    with urllib.request.urlopen(url, timeout=300) as u:
         rawdata = u.read().decode("utf-8")
-    logging.debug('Observations loaded')
+    logging.info('Observations loaded')
     
     if len(rawdata) == 0:
         raise ValueError('No data for location {} and time {}'.format(args['latlon'], args['endtime']))
@@ -190,11 +190,12 @@ def process_timerange(starttime, endtime, params, param_names, producer):
         starttime, endtime = io.get_timerange(label_metadata)
         startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
         endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
+        prec_start = starttime - timedelta(hours=6)
         
         args = {
             'latlon': latlon,
             'params': ','.join(params),
-            'starttime' : startstr,
+            'starttime' : prec_start.strftime('%Y-%m-%dT%H:%M:%S'),
             'endtime': endstr,
             'producer': options.producer,
             'apikey' : apikey,
@@ -210,29 +211,30 @@ def process_timerange(starttime, endtime, params, param_names, producer):
             'maxdistance' : 30 # Harmonie FlashMultiplicity value in km
         }
 
-        prec_start = starttime - timedelta(hours=6)
-        prec_args = {
-            'producer' : options.producer,
-            'starttime' : prec_start.strftime('%Y-%m-%dT%H:%M:%S'),
-            'endtime' : endstr,
-            'latlon' : latlon,
-            'apikey' : apikey,
-            'maxdistance' : 100000 
-        }
-        
+
+        def get_obs(params, args, flash_args, label_metadata, i=0):
+            i += 1
+            try: 
+                obs_df = get_ground_obs(params, args)
+                obs_df = io.find_best_station(obs_df)        
+                metadata_df, data_df = io.filter_ground_obs(obs_df, label_metadata)
+                
+                flash_df = get_flashes(flash_args)
+                data_df = io.filter_flashes(flash_df, data_df)
+
+                data_df = io.filter_precipitation(data_df, prec_column=23)
+                data_df.fillna(-99, inplace=True)
+            except (urllib.error.URLError, timeout, ConnectionResetError):
+                logging.error('Timeout. Trying again ({}/5)...'.format(i))
+                if i < 5:
+                    metadata_df, data_df = get_obs(params, args, flash_args, label_metadata, i)
+                else:
+                    raise urllib.error.URLError()
+                
+            return metadata_df, data_df
+            
         try:
-            obs_df = get_ground_obs(params, args)
-            obs_df = io.find_best_station(obs_df)        
-            metadata_df, data_df = io.filter_ground_obs(obs_df, label_metadata)
-            
-            flash_df = get_flashes(flash_args)
-            data_df = io.filter_flashes(flash_df, data_df)
-            
-            prec_df = get_prec_sum(prec_args)
-            prec_df = io.find_best_station(prec_df)
-            data_df = io.filter_precipitation(prec_df, data_df)
-            
-            data_df.fillna(-99, inplace=True)
+            metadata_df, data_df = get_obs(params, args, flash_args, label_metadata)
         except ValueError as e:
             logging.error(e)
             continue
@@ -243,10 +245,23 @@ def process_timerange(starttime, endtime, params, param_names, producer):
         logging.debug('Dataset size: {}'.format(data.shape))
         logging.debug('Metadata size: {}'.format(np.array(metadata).shape))
 
+        def add_rows(header, data, metadata, dataset, i=0):
+            i += 1
+            try:
+                count = a.add_rows('feature', header, data, metadata, dataset, time_column=1, loc_column=0)
+            except psycopg2.OperationalError:
+                logging.error('Connection error to db. Trying again ({}/5)...'.format(i))
+                if i < 5:
+                    count = add_rows(header, data, metadata, dataset, i)
+                else:
+                    raise psycopg2.OperationalError()
+
+            return count
+                                
         if len(data) > 0:
             # Save to database        
             header = param_names[2:] + ['count_flash', 'precipitation3h', 'precipitation6h']
-            count += a.add_rows('feature', header, data, metadata, options.dataset, time_column=1, loc_column=0)
+            count += add_rows(header, data, metadata, options.dataset)
 
         if placecount%10 == 0:
             logging.info('Process {}: {}/{} locations processed ({} rows inserted)...'.format(process_id, placecount, len(latlons), count))
@@ -269,7 +284,7 @@ def main():
         job_count = multiprocessing.cpu_count()
     pool = multiprocessing.Pool(job_count)
 
-    a = mlfdb.mlfdb(options.db_config_file)
+    a = db.mlfdb(options.db_config_file)
     io = lib.io.IO()    
     params, param_names = io.read_parameters('cnf/parameters.txt')
 
@@ -281,7 +296,7 @@ def main():
     start = datetime.strptime(options.starttime, '%Y-%m-%d')
     end = datetime.strptime(options.endtime, '%Y-%m-%d')
 
-    res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, param_names, options.producer)) for chunk in split_timerange(start, end, days=1, hours=0)]
+    res = [pool.apply_async(process_timerange, args=(chunk[0], chunk[1], params, param_names, options.producer)) for chunk in split_timerange(start, end, days=0, hours=12)]
     total_count = [p.get() for p in res]
 
     logging.info('Added {} rows observations to db.'.format(sum(total_count)))
