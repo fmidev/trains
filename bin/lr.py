@@ -48,7 +48,6 @@ def lr(features, labels, mode, params):
 #    X = tf.placeholder(tf.float32, name='X')
 #    y = tf.placeholder(tf.float32, name='y')
     if type(features) is dict:
-        print(features)
         X = features['X']
     else:
         X = features
@@ -92,8 +91,8 @@ def lr(features, labels, mode, params):
             loss=loss,
             train_op=optimize
         )
-
-    # assert mode == tf.estimator.ModeKeys.EVAL
+    
+    assert mode == tf.estimator.ModeKeys.EVAL
     rmse = tf.metrics.root_mean_squared_error(labels, y_pred)
     
     return tf.estimator.EstimatorSpec(
