@@ -682,36 +682,77 @@ class IO:
 
 
     def df_to_serving_file(self, df):
-        df.drop(columns=['time','place'], inplace=True)
-        tmp = tempfile.NamedTemporaryFile(delete=False)
-
-        i = 0
-        with open(tmp.name, 'w') as f:                
-            for h,values in df.iterrows():
-                i += 1
-                if i > 100:
-                    break
-                f.write('{"X": ['+','.join(list(map(str, values)))+']}\n')
-
+        """
+        Write observations to files (100 lines per each) required by
+        gcloud cmd sdk
+    
+        df : Pandas DataFrame
+             observations
         
-        return tmp.name        
+        return : list
+                 files
+        """        
+        data = df.drop(columns=['time','place'])
+        files = []
 
-    def predict_gcloud_ml(self, model, version, x_file):
-        """
-        Predict 
-        """
-        cmd = 'gcloud --quiet ml-engine predict --model {model} --version {version} --json-instances {x_file}'.format(model=model, version=version, x_file=x_file)
+        tmp = tempfile.NamedTemporaryFile(delete=False)
+        i = 0
+        f = open(tmp.name, 'w')
 
-        logging.debug('Using cmd: {}'.format(cmd))
-        result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
-        lines = result.stdout.decode('utf-8').split('\n')
+        for h,values in data.iterrows():
+            i += 1
+            f.write('{"X": ['+','.join(list(map(str, values)))+']}\n')
+            if i > 99:
+                files.append(tmp.name)
+                tmp = tempfile.NamedTemporaryFile(delete=False)
+                f.close()
+                f = open(tmp.name, 'w')
+                i = 0
+
+        if tmp.name not in files:
+            files.append(tmp.name)
+        
+        return files
+
+    def predict_gcloud_ml(self, model, version, files, obs, names):
+
+        """
+        Predict delays using gcloud command line sdk
+         
+        model : str
+                model name
+        version : str
+                  model version
+        files : list
+                list of files where observations are located
+        obs : Pandas DataFrame
+              observations, used to map prediction to latlons
+        names : dict
+                station names in format {latlon: name, ...}
+        
+        returns : dict
+                  result in format {name: [(time, lat, lon, delay), ...], ...}
+        """
         ret = []
-        for line in lines[1:-1]:
-            ret.append(line[1:-1])
+
+        for x_file in files:
+            cmd = 'gcloud --quiet ml-engine predict --model {model} --version {version} --json-instances {x_file}'.format(model=model, version=version, x_file=x_file)
+
+            logging.debug('Using cmd: {}'.format(cmd))
+            result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
+            lines = result.stdout.decode('utf-8').split('\n')
+
+            for line in lines[1:-1]:
+                ret.append(line[1:-1])
+
+        ret = self._prediction_to_locations(ret, obs, names)
         return ret
     
     def predict_json(self, project, model, instances, version=None):
-        """Send json data to a deployed model for prediction.
+        """
+        NOT WORKING in environments in hand
+
+        Send json data to a deployed model for prediction.
     
         Args:
         project (str): project where the Cloud ML Engine Model is deployed.
@@ -745,6 +786,28 @@ class IO:
         
         return response['predictions']
 
+    def _prediction_to_locations(self, pred, obs, names):
+        """
+        Map prediction to locations
+        
+        pred : list
+               list of predicted delays
+        obs : Pandas DataFrame
+              observations (used to map predictions to latlons
+        names : dict
+                station names in format {latlon: name, ...}
+    
+        returns : dict
+                  result in format {name: [(time, lat, lon, delay), ...], ...}
+        """
+        res = {}
+        for h,values in obs.iterrows():
+            name = names[values.place]
+            if name not in res:
+                res[name] = []
+            res[name].append((values.time, values.lat, values.lon, float(pred.pop(0))))
+
+        return res
     #
     # SASSE
     #     

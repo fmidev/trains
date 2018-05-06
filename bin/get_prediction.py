@@ -74,7 +74,7 @@ def get_forecasts(args):
     return pandas df
     """
 
-    url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&endtime=data&latlons={latlons}&param={params}#{names}'.format(**args)
+    url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&endtime=data&latlons={latlons}&param={params}'.format(**args)
     
     logging.debug('Loading data from SmartMet Server...')
     logging.debug('Using url: {}'.format(url))
@@ -143,14 +143,14 @@ def main():
 
     max_count = 1
     latlons = []
-    names = []
+    names = {}
     for name, station in stations.items():
         if len(latlons) > max_count:
             break
-        latlons.append(str(station['lat'])+','+str(station['lon']))
-        names.append(name)
+        latlon = str(station['lat'])+','+str(station['lon'])
+        latlons.append(latlon)
+        names[latlon] = name
     
-    print(params)
     logging.info('Getting delay forecast for {} locations...'.format(len(stations)))
 
     # Create url and get data
@@ -158,7 +158,6 @@ def main():
 
     args = {
         'latlons': ','.join(latlons),
-        'names' : ','.join(names),
         'params': ','.join(params),
         'producer': 'harmonie_skandinavia_pinta',
         'apikey' : apikey
@@ -168,13 +167,23 @@ def main():
 
     data = io._calc_prec_sums(data, prec_column='PrecipitationInstantTotal').fillna(-99)
 
-    x_file = io.df_to_serving_file(data)
+    logging.info('Data shape: {}'.format(data.shape))
+    files = io.df_to_serving_file(data)
+
     #with open(x_file, 'r') as f:
     #    print(f.read())        
-    result = io.predict_gcloud_ml('trains_lr', 'tiny_subset_2', x_file)
+
+    result = io.predict_gcloud_ml('trains_lr',
+                                  'tiny_subset_2',
+                                  files,
+                                  data,
+                                  names)
+    logging.info('Got predictions for {} stations. First station has {} values.'.format(len(result), len(next(iter(result.values())))))
+
     print(result)
+    #print(stations)
     #print(data)
-    #print(serving_json)
+    
     
 if __name__=='__main__':
 
