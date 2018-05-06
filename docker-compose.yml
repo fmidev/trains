@@ -72,6 +72,14 @@ services:
     image: tervo/ml:cpu_local    
     command: python -u bin/clean_duplicates.py --dataset ${DATASET:-trains-10d-sample} --logging_leve ${LOGGING:-INFO} --count 29
 #############
+  moddev:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    image: tervo/ml:cpu    
+    command: python -u bin/lr.py --dataset ${DATASET:-trains-tiny-subset} --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-DEBUG} --save_path /tmp/moddev/model --output_path /tmp/moddev/results
+#############
   vis:
     volumes:
       - ~:/root:ro
