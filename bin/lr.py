@@ -38,12 +38,11 @@ def serving_input_receiver_fn():
     return tf.estimator.export.ServingInputReceiver(inputs, inputs)    
 
 
-def lr(features, labels, mode, params):
+def lr(features, labels, mode):
     """
     model function for linear regression
     """
     # Define parameters
-    #batch_size, n_dim = features.shape
     
     # Define placeholders for input
 #    X = tf.placeholder(tf.float32, name='X')
@@ -54,9 +53,16 @@ def lr(features, labels, mode, params):
         X = features
     y = labels
 
+    try:
+        n_samples, n_dim = X.shape
+    except ValueError:
+        n_samples = None
+        n_dim = 28
+
+    logging.debug('n_dim: {} | n_smaples: {}'.format(n_dim, n_samples))
     train_losses, val_losses = [], []
             
-    W = tf.get_variable("weights", (params['n_dim'], 1),
+    W = tf.get_variable("weights", (n_dim, 1),
                         initializer=tf.random_normal_initializer(),
                         dtype=tf.float64)
     b = tf.get_variable("bias", (1, ),
@@ -78,7 +84,7 @@ def lr(features, labels, mode, params):
         )
     
     # Define optimizer operation
-    loss = tf.reduce_sum((y - y_pred) ** 2 / params['n_samples'])
+    loss = tf.reduce_sum((y - y_pred) ** 2 / n_samples)
     optimizer = tf.train.AdamOptimizer()
 
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -121,6 +127,15 @@ def main():
     starttime, endtime = io.get_dates(options)
     logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
 
+    # Define number of gradient descent loops
+    n_loops = 5000
+    batch_size = 100
+    
+    model = tf.estimator.Estimator(
+        model_fn=lr,
+        model_dir=options.log_dir
+    )
+    
     day_step = 30
     hour_step = 0
     
@@ -158,24 +173,11 @@ def main():
         logging.info('Processing {} rows...'.format(len(f_data)))
         
         assert l_data.shape[0] == f_data.shape[0]
-        
+
         target = l_data[:,0]
         X_train, X_test, y_train, y_test = train_test_split(f_data, l_data[:,0], test_size=0.33)
 
-        # Define number of gradient descent loops
-        n_loops = 1000
-        batch_size = 100
-        n_samples, n_dim = X_train.shape
-
-        model = tf.estimator.Estimator(
-            model_fn=lr,
-            params={
-                'n_samples': n_samples,
-                'n_dim' : n_dim
-            },
-            model_dir=options.log_dir
-        )
-        
+        n_samples, n_dims = X_train.shape
         #    saver = tf.train.Saver()
         
         model_filename = options.save_path+'/model_state.ckpt'
@@ -192,7 +194,7 @@ def main():
             X_batch, y_batch = X_test[indices], y_test[indices]
             return X_batch, y_batch        
         
-        model.train(input_fn=input_train, max_steps=n_loops)
+        model.train(input_fn=input_train, steps=n_loops)
         model.evaluate(input_fn=input_test, steps=1)
         
         #feature_spec = {"X": tf.FixedLenFeature([29],tf.float32)}
@@ -200,10 +202,6 @@ def main():
         #feature_spec = tf.feature_column.make_parse_example_spec(get_input_columns())
         #serving_input_fn = export.build_parsing_serving_input_receiver_fn(feature_spec)
         
-        model.export_savedmodel(
-            export_dir,
-            serving_input_receiver_fn
-        )
         #    io.export_tf_model(sess, export_dir, inputs={'X': X}, outputs={'y': y_pred}, serving_input_fn=serving_input_receiver_fn)
 
         # filename = options.output_path + '/training_loss.png'
@@ -211,8 +209,12 @@ def main():
 
         start = end
         end = start + timedelta(days=day_step, hours=hour_step)
-
-        
+ 
+    model.export_savedmodel(
+        export_dir,
+        serving_input_receiver_fn
+    )
+       
     
 if __name__=='__main__':
 

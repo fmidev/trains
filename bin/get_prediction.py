@@ -174,7 +174,7 @@ def main():
     #    print(f.read())        
 
     result = io.predict_gcloud_ml('trains_lr',
-                                  'tiny_subset_2',
+                                  'tiny_subset_5',
                                   files,
                                   data,
                                   names)
