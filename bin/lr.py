@@ -121,8 +121,8 @@ def main():
     starttime, endtime = io.get_dates(options)
     logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
 
-    day_step = 0
-    hour_step = 3
+    day_step = 30
+    hour_step = 0
     
     start = starttime
     end = start + timedelta(days=day_step, hours=hour_step)
@@ -133,12 +133,12 @@ def main():
         try:
             l_metadata, l_header, l_data = a.get_rows(options.dataset,
                                                       starttime=start,
-                                                      endtime=endtime,
+                                                      endtime=end,
                                                       rowtype='label')
             
             f_metadata, f_header, f_data = a.get_rows(options.dataset,
                                                       starttime=start,
-                                                      endtime=endtime,
+                                                      endtime=end,
                                                       rowtype='feature',
                                                       parameters=[])
         except ValueError as e:
@@ -150,7 +150,7 @@ def main():
             continue
         
         l_metadata, l_data = io.filter_train_type(l_metadata, l_data, traintypes=[0,1], sum_types=True)
-        l_metadata, l_data = io.filter_labels(l_metadata, l_data, f_metadata, f_data) #, invert=True)
+        l_metadata, l_data = io.filter_labels(l_metadata, l_data, f_metadata, f_data, uniq=True) #, invert=True)
         
         logging.debug('Labels metadata shape: {} | Labels shape: {}'.format(l_metadata.shape, l_data.shape))
         logging.debug('Features metadata shape: {} | Features shape: {}'.format(f_metadata.shape, f_data.shape))

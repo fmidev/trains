@@ -354,34 +354,65 @@ class IO:
         return filtered labels_metadata, labels (numpy array)
         """
 
+        logging.debug('Filtering labels...')
         if len(features_metadata) == 0 or len(features) == 0:
             return labels_metadata, labels
+
+        l_metadata = pd.DataFrame(np.concatenate((labels_metadata, labels), axis=1))
+        f_metadata = pd.DataFrame(np.concatenate((features_metadata, features), axis=1))
+
+        l_metadata.columns = l_metadata.columns.map(lambda x: str(x) + '_label')
         
-        labels_metadata = np.array(labels_metadata)        
-        
+        f_l_metadata = pd.merge(l_metadata,
+                                f_metadata.drop(columns=[2,3]), left_on=['0_label','1_label'], right_on=[0,1], how='left', left_index=True, indicator=True, copy=False)
+
         if uniq:
-            logging.debug('Dropping duplicate values...')
-            df = pd.DataFrame(labels_metadata)
-            mask = np.invert(df.duplicated([0,1]).as_matrix())
-            labels_metadata = labels_metadata[(mask)]
-            labels = labels[(mask)]
-            
-            logging.debug('Shape of uniq metadata: {}'.format(labels_metadata.shape))
-            logging.debug('Shape of uniq data: {}'.format(labels.shape))
-        
-        mask = np.isin(labels_metadata, features_metadata)
+            f_l_metadata.drop_duplicates(subset=['0_label', '1_label'], inplace=True)
+
         if invert:
-            filtered_labels = labels[np.invert((mask[:,0] & mask[:,1]))]
-            filtered_labels_metadata = labels_metadata[np.invert((mask[:,0] & mask[:,1]))]
+            f_l_metadata = f_l_metadata.loc[(f_l_metadata['_merge'] == 'left_only')]
         else:
-            filtered_labels = labels[(mask[:,0] & mask[:,1])]
-            filtered_labels_metadata = labels_metadata[(mask[:,0] & mask[:,1])]
+            f_l_metadata = f_l_metadata.loc[(f_l_metadata['_merge'] == 'both')]
 
-        logging.debug('Shape of filtered data: {}'.format(filtered_labels.shape))
-        logging.debug('Shape of filtered metadata: {}'.format(filtered_labels_metadata.shape))                                             
+        cols = ['0_label','1_label','2_label','3_label']
+        l_metadata = f_l_metadata.loc[:,cols].as_matrix()
+        f_l_metadata.drop(columns=cols, inplace=True)
 
-        return filtered_labels_metadata, filtered_labels
-
+        filter_cols = []
+        for col in f_l_metadata:
+            try:
+                if col.endswith('_label'):
+                    filter_cols.append(col)
+            except AttributeError as e:
+                pass
+            
+        l_data = f_l_metadata[filter_cols].as_matrix()
+        
+        logging.debug('Shape of filtered data | metadata: {} | {}'.format(l_data.shape, l_metadata.shape))
+        print(l_data)
+                                                                  
+        return l_metadata, l_data
+    
+    def uniq(self, metadata, data):
+        """
+        Drop uniq values from metadata and data
+        
+        metadata : np.array like
+                   metadata
+        data : np.array
+               data
+        
+        returns : metadata, data
+        """
+        
+        df = pd.DataFrame(metadata)
+        mask = np.invert(df.duplicated([0,1]).as_matrix())
+        data_metadata = metadata[(mask)]
+        data = data[(mask)]
+        logging.debug('Shape of uniq metadata: {}'.format(metadata.shape))
+        logging.debug('Shape of uniq data: {}'.format(data.shape))
+        return metadata, data
+    
     def filter_train_type(self, labels_metadata=[], labels=[],
                           labels_df=[], traintypes=[], sum_types = False,
                           train_type_column='train type',
