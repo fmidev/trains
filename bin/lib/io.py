@@ -389,7 +389,6 @@ class IO:
         l_data = f_l_metadata[filter_cols].as_matrix()
         
         logging.debug('Shape of filtered data | metadata: {} | {}'.format(l_data.shape, l_metadata.shape))
-        print(l_data)
                                                                   
         return l_metadata, l_data
     
