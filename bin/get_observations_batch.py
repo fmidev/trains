@@ -60,12 +60,12 @@ def get_prec_sum(args):
     """
     url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timestep=60&starttime={starttime}&endtime={endtime}&param=stationname,time,place,lat,lon,precipitation1h&maxdistance={maxdistance}&numberofstations=5".format(**args)
 
-    logging.info('Using url: {}'.format(url))
+    logging.debug('Using url: {}'.format(url))
     
     with urllib.request.urlopen(url, timeout=300) as u:
         rawdata = u.read().decode("utf-8")
 
-    logging.info('Precipitation data loaded')
+    logging.debug('Precipitation data loaded')
     
     if len(rawdata) == 0:
         return pd.DataFrame()
@@ -96,7 +96,7 @@ def get_flashes(args):
 
     #url = "http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?param=time,peak_current&producer=flash&format=ascii&separator=;&starttime=2017-06-08T00:00:00&endtime=2017-06-08T18:00:00&latlon=57.1324,24.3574:30&timeformat=epoch&tz=local"
     
-    logging.info('Using url: {}'.format(url))
+    logging.debug('Using url: {}'.format(url))
 
     rawdata = []
     try:
@@ -105,7 +105,7 @@ def get_flashes(args):
     except Exception as e:
         logging.error(e)
 
-    logging.info('Flash data loaded')
+    logging.debug('Flash data loaded')
 
     if len(rawdata) == 0:
         return pd.DataFrame()
@@ -132,11 +132,11 @@ def get_ground_obs(params, args):
     url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&starttime={starttime}&endtime={endtime}&timestep=60&param=stationname,{params}&maxdistance={maxdistance}&numberofstations=5'.format(**args)
     
     logging.debug('Loading data from SmartMet Server...')
-    logging.info('Using url: {}'.format(url))
+    logging.debug('Using url: {}'.format(url))
 
     with urllib.request.urlopen(url, timeout=300) as u:
         rawdata = u.read().decode("utf-8")
-    logging.info('Observations loaded')
+    logging.debug('Observations loaded')
     
     if len(rawdata) == 0:
         raise ValueError('No data for location {} and time {}'.format(args['latlon'], args['endtime']))
@@ -160,7 +160,7 @@ def process_timerange(starttime, endtime, params, param_names, producer):
     startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
     endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
     
-    logging.info('Processing time {} - {}...'.format(startstr, endstr))
+    logging.info('Process {}: Processing time {} - {}...'.format(process_id, startstr, endstr))
 
     # Get labels, features and filter labels that do not have features
     try:
@@ -175,7 +175,7 @@ def process_timerange(starttime, endtime, params, param_names, producer):
     for row in filt_metadata:
         latlons.add(str(row[3])+','+str(row[2]))
                     
-    logging.info('There are {} (of total {}) lines to process...'.format(len(filt_metadata), len(l_metadata)))    
+    logging.info('Process {}: There are {} (of total {}) lines to process...'.format(process_id, len(filt_metadata), len(l_metadata)))    
 
     if len(filt_metadata) == 0:
         return 0
@@ -224,8 +224,11 @@ def process_timerange(starttime, endtime, params, param_names, producer):
 
                 data_df = io.filter_precipitation(data_df, prec_column=23)
                 data_df.fillna(-99, inplace=True)
-            except (urllib.error.URLError, timeout, ConnectionResetError):
-                logging.error('Timeout. Trying again ({}/5)...'.format(i))
+            except (urllib.error.URLError, timeout, ConnectionResetError) as e:
+                logging.error('Process {}: Timeout. Trying again ({}/5)...'.format(process_id, i))
+                logging.error('Process {}: Exception: {}'.format(process_id, e))
+                # logging.error('Params: {}'.format(args))
+                # logging.error('Flash params: {}'.format(flahs_args))
                 if i < 5:
                     metadata_df, data_df = get_obs(params, args, flash_args, label_metadata, i)
                 else:
