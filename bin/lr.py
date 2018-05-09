@@ -2,6 +2,7 @@ import sys, os
 import argparse
 import logging
 import datetime as dt
+from datetime import timedelta
 import json
 import itertools
 import numpy as np
@@ -118,77 +119,99 @@ def main():
         os.makedirs(options.output_path)
 
     starttime, endtime = io.get_dates(options)
-        
-    logging.info('Loading classification dataset from db')
-    if starttime is not None and endtime is not None:
-        logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))        
+    logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
 
-    l_metadata, l_header, l_data = a.get_rows(options.dataset,
-                                              starttime=starttime,
-                                              endtime=endtime,
-                                              rowtype='label')
-
-    f_metadata, f_header, f_data = a.get_rows(options.dataset,
-                                              starttime=starttime,
-                                              endtime=endtime,
-                                              rowtype='feature',
-                                              parameters=[])
+    day_step = 0
+    hour_step = 3
     
-    l_metadata, l_data = io.filter_train_type(l_metadata, l_data, traintypes=[0,1], sum_types=True)
-    l_metadata, l_data = io.filter_labels(l_metadata, l_data, f_metadata, f_data) #, invert=True)
+    start = starttime
+    end = start + timedelta(days=day_step, hours=hour_step)
     
-    logging.debug('Labels metadata shape: {} | Labels shape: {}'.format(l_metadata.shape, l_data.shape))
-    logging.debug('Features metadata shape: {} | Features shape: {}'.format(f_metadata.shape, f_data.shape))
+    while end <= endtime:
+        logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'), end.strftime('%Y-%m-%d %H:%M')))            
 
-    target = l_data[:,0]
-    X_train, X_test, y_train, y_test = train_test_split(f_data, l_data[:,0], test_size=0.33)
-
-    # Define number of gradient descent loops
-    n_loops = 1000
-    batch_size = 100
-    n_samples, n_dim = X_train.shape
-
-    model = tf.estimator.Estimator(
-        model_fn=lr,
-        params={
-            'n_samples': n_samples,
-            'n_dim' : n_dim
-        },
-        model_dir=options.log_dir
-    )
-
-    #    saver = tf.train.Saver()
-
-    model_filename = options.save_path+'/model_state.ckpt'
-    export_dir = options.save_path+'/serving'
+        try:
+            l_metadata, l_header, l_data = a.get_rows(options.dataset,
+                                                      starttime=start,
+                                                      endtime=endtime,
+                                                      rowtype='label')
             
-    # Select random mini-batch
-    def input_train():
-        indices = np.random.choice(n_samples, batch_size)
-        X_batch, y_batch = X_train[indices], y_train[indices]
-        return X_batch, y_batch
+            f_metadata, f_header, f_data = a.get_rows(options.dataset,
+                                                      starttime=start,
+                                                      endtime=endtime,
+                                                      rowtype='feature',
+                                                      parameters=[])
+        except ValueError as e:
+            f_data, l_data = [], []
 
-    def input_test():
-        indices = np.random.choice(len(X_test), batch_size)
-        X_batch, y_batch = X_test[indices], y_test[indices]
-        return X_batch, y_batch        
-    
-    model.train(input_fn=input_train, steps=n_loops)
-    model.evaluate(input_fn=input_test, steps=1)
+        if len(f_data) == 0 or len(l_data) == 0:
+            start = end
+            end = start + timedelta(days=day_step, hours=hour_step)        
+            continue
+        
+        l_metadata, l_data = io.filter_train_type(l_metadata, l_data, traintypes=[0,1], sum_types=True)
+        l_metadata, l_data = io.filter_labels(l_metadata, l_data, f_metadata, f_data) #, invert=True)
+        
+        logging.debug('Labels metadata shape: {} | Labels shape: {}'.format(l_metadata.shape, l_data.shape))
+        logging.debug('Features metadata shape: {} | Features shape: {}'.format(f_metadata.shape, f_data.shape))
 
-    #feature_spec = {"X": tf.FixedLenFeature([29],tf.float32)}
-    #feature_spec = {"X": tf.VarLenFeature(tf.float32)}
-    #feature_spec = tf.feature_column.make_parse_example_spec(get_input_columns())
-    #serving_input_fn = export.build_parsing_serving_input_receiver_fn(feature_spec)
+        logging.info('Processing {} rows...'.format(len(f_data)))
+        
+        assert l_data.shape[0] == f_data.shape[0]
+        
+        target = l_data[:,0]
+        X_train, X_test, y_train, y_test = train_test_split(f_data, l_data[:,0], test_size=0.33)
 
-    model.export_savedmodel(
-        export_dir,
-        serving_input_receiver_fn
-    )
-#    io.export_tf_model(sess, export_dir, inputs={'X': X}, outputs={'y': y_pred}, serving_input_fn=serving_input_receiver_fn)
+        # Define number of gradient descent loops
+        n_loops = 1000
+        batch_size = 100
+        n_samples, n_dim = X_train.shape
 
-    # filename = options.output_path + '/training_loss.png'
-    # viz.plot_learning(np.array(train_losses), np.array(val_losses), filename)
+        model = tf.estimator.Estimator(
+            model_fn=lr,
+            params={
+                'n_samples': n_samples,
+                'n_dim' : n_dim
+            },
+            model_dir=options.log_dir
+        )
+        
+        #    saver = tf.train.Saver()
+        
+        model_filename = options.save_path+'/model_state.ckpt'
+        export_dir = options.save_path+'/serving'
+            
+        # Select random mini-batch
+        def input_train():        
+            indices = np.random.choice(n_samples, batch_size)
+            X_batch, y_batch = X_train[indices], y_train[indices]
+            return X_batch, y_batch
+        
+        def input_test():
+            indices = np.random.choice(len(X_test), batch_size)
+            X_batch, y_batch = X_test[indices], y_test[indices]
+            return X_batch, y_batch        
+        
+        model.train(input_fn=input_train, max_steps=n_loops)
+        model.evaluate(input_fn=input_test, steps=1)
+        
+        #feature_spec = {"X": tf.FixedLenFeature([29],tf.float32)}
+        #feature_spec = {"X": tf.VarLenFeature(tf.float32)}
+        #feature_spec = tf.feature_column.make_parse_example_spec(get_input_columns())
+        #serving_input_fn = export.build_parsing_serving_input_receiver_fn(feature_spec)
+        
+        model.export_savedmodel(
+            export_dir,
+            serving_input_receiver_fn
+        )
+        #    io.export_tf_model(sess, export_dir, inputs={'X': X}, outputs={'y': y_pred}, serving_input_fn=serving_input_receiver_fn)
+
+        # filename = options.output_path + '/training_loss.png'
+        # viz.plot_learning(np.array(train_losses), np.array(val_losses), filename)
+
+        start = end
+        end = start + timedelta(days=day_step, hours=hour_step)
+
         
     
 if __name__=='__main__':
