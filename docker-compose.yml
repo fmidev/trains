@@ -91,7 +91,7 @@ services:
     volumes:
       - /tmp:/tmp
     ports:
-      - "6006:6006"
+      - "80:6006"
     image: tensorflow/tensorflow
     command: tensorboard --logdir=/tmp/lr --host 0.0.0.0
 #############
