@@ -21,7 +21,6 @@ windgust;max_windgust
 windgust;min_windgust
 windgust;mean_windgust
 PrecipitationInstantTotal;max_precipitation1h
-precipitationform;max_prst2
 snowdepth;max_snowdepth
 totalcloudcover;max_n
 visibility2;min_vis

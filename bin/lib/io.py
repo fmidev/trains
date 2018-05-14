@@ -699,8 +699,10 @@ class IO:
         i = 0
         f = open(tmp.name, 'w')
 
-        for h,values in data.iterrows():
+        pred_data = data.drop(columns=['origintime'])
+        for h,values in pred_data.iterrows():
             i += 1
+            
             f.write('{"X": ['+','.join(list(map(str, values)))+']}\n')
             if i > 99:
                 files.append(tmp.name)
@@ -714,7 +716,7 @@ class IO:
         
         return files
 
-    def predict_gcloud_ml(self, model, version, files, obs, names):
+    def predict_gcloud_ml(self, model, version, files, weather_data, names):
 
         """
         Predict delays using gcloud command line sdk
@@ -725,8 +727,8 @@ class IO:
                   model version
         files : list
                 list of files where observations are located
-        obs : Pandas DataFrame
-              observations, used to map prediction to latlons
+        weather_data : Pandas DataFrame
+              weather_dataervations, used to map prediction to latlons
         names : dict
                 station names in format {latlon: name, ...}
         
@@ -745,7 +747,7 @@ class IO:
             for line in lines[1:-1]:
                 ret.append(line[1:-1])
 
-        ret = self._prediction_to_locations(ret, obs, names)
+        ret = self._prediction_to_locations(ret, weather_data, names)
         return ret
     
     def predict_json(self, project, model, instances, version=None):
@@ -786,14 +788,14 @@ class IO:
         
         return response['predictions']
 
-    def _prediction_to_locations(self, pred, obs, names):
+    def _prediction_to_locations(self, pred, weather_data, names):
         """
         Map prediction to locations
         
         pred : list
                list of predicted delays
-        obs : Pandas DataFrame
-              observations (used to map predictions to latlons
+        weather_data : Pandas DataFrame
+              weather_data (used to map predictions to latlons
         names : dict
                 station names in format {latlon: name, ...}
     
@@ -801,11 +803,12 @@ class IO:
                   result in format {name: [(time, lat, lon, delay), ...], ...}
         """
         res = {}
-        for h,values in obs.iterrows():
+        for h,values in weather_data.iterrows():
             name = names[values.place]
             if name not in res:
                 res[name] = []
-            res[name].append((values.time, values.lat, values.lon, float(pred.pop(0))))
+
+            res[name].append((values.time, values.lat, values.lon, float(pred.pop(0)), values.origintime))
 
         return res
     #
