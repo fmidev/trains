@@ -17,52 +17,7 @@ import pandas as pd
 
 from mlfdb import mlfdb
 import lib.io
-
-def get_prec_sum(args):
-    """ 
-    Get precipitation sum
-    """
-    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=json&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timesteps=6&timestep=60&starttime={endtime}&param=precipitation1h,stationname&attributes=stationname&numberofstations=3&maxdistance={maxdistance}".format(**args)
-
-    logging.debug('Using url: {}'.format(url))
-    
-    with urllib.request.urlopen(url, timeout=600) as u:
-        rawdata = json.loads(u.read().decode("utf-8"))        
-
-    logging.debug('Precipitation data loaded')
-    
-    if len(rawdata) == 0:
-        return [-99, -99]
-
-    # Go through stations
-    prec_sums_6h, prec_sums_3h = [], []
-    for station,values in rawdata.items():
-        # if station is empty, continue to next station
-        if len(values) == 0:
-            continue
-        
-        # Go through times
-        prec_sum_6h = 0
-        prec_sum_3h = 0
-        i = 0
-        for step in values:
-            i += 1                
-            try:
-                prec = float(step['precipitation1h'])
-                if prec >= 0:
-                    prec_sum_6h += prec
-                    if i > 3:
-                        prec_sum_3h += prec
-                    found = True
-            except:
-                break
-        prec_sums_6h.append(prec_sum_6h)
-        prec_sums_3h.append(prec_sum_3h)
-
-    if not found:
-        return [-99, -99]
-        
-    return [max(prec_sums_3h), max(prec_sums_6h)]
+from lib import dbhandler as _db
         
 def get_forecasts(args):
     """
@@ -77,7 +32,7 @@ def get_forecasts(args):
     url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&endtime=data&latlons={latlons}&param={params}'.format(**args)
     
     logging.debug('Loading data from SmartMet Server...')
-    logging.debug('Using url: {}'.format(url))
+    logging.info('Using url: {}'.format(url))
 
     with urllib.request.urlopen(url, timeout=6000) as u:
         rawdata = args['params'].replace(',',';')+'\n'+u.read().decode("utf-8")
@@ -87,50 +42,6 @@ def get_forecasts(args):
     df = pd.read_csv(obsf, sep=";")    
     
     return df
-    
-
-    
-    # flash_start = starttime - timedelta(hours=1)
-    # flash_args = {
-    #     'starttime' : flash_start.strftime('%Y-%m-%d %H:%M:%S'),
-    #     'endtime' : endstr,
-    #     'latlon' : latlon,
-    #     'apikey' : apikey,
-    #     'maxdistance' : 30000 # Harmonie FlashMultiplicity value
-    # }
-    prec_args = {
-        'producer' : options.producer,
-        'starttime' : startstr,
-        'endtime' : endstr,
-        'latlon' : ','.join(latlons),
-        'apikey' : apikey,
-        'maxdistance' : 50000 # Default
-    }
-
-    try:
-        obs_df = get_ground_obs(params, args)
-        metadata, data = io.filter_ground_obs(obs_df, filt_metadata)
-        print(metadata)
-        #data[0].append(get_flashes(flash_args))
-        #data[0] += get_prec_sum(prec_args)
-    except timeout:
-        logging.error('Timeout while fetching data...')
-    except ValueError as e:
-        logging.error(e)
-        return 0    
-                
-    data = np.array(data).astype(np.float)
-    
-    logging.debug('Dataset size: {}'.format(data.shape))
-    logging.debug('Metadata size: {}'.format(np.array(metadata).shape))
-        
-    # Save to database        
-    header = params[2:] #+ ['count(flash:60:0)', 'max(sum_t(precipitation1h:180:0))', 'max(sum_t(precipitation1h:360:0))']
-    
-    logging.debug('Inserting new dataset to db...')
-    count = a.add_rows('feature', header, data, metadata, options.dataset)
-
-    return count
 
 def main():
     """
@@ -138,15 +49,17 @@ def main():
     """
 
     io = lib.io.IO()
-    params,names = io.read_parameters(options.parameters_filename)
+    
+    params, _ = io.read_parameters(options.parameters_filename)
+    params.append('origintime')
     stations = io.get_train_stations(filename=options.stations_filename)
 
-    max_count = 1
+    #max_count = 1
     latlons = []
     names = {}
     for name, station in stations.items():
-        if len(latlons) > max_count:
-            break
+        #if len(latlons) > max_count:
+        #    break
         latlon = str(station['lat'])+','+str(station['lon'])
         latlons.append(latlon)
         names[latlon] = name
@@ -154,7 +67,7 @@ def main():
     logging.info('Getting delay forecast for {} locations...'.format(len(stations)))
 
     # Create url and get data
-    apikey = '9fdf9977-5d8f-4a1f-9800-d80a007579c9'
+    apikey = 'a13287ed-007d-476f-bfe3-80bf5e8ea8a0'
 
     args = {
         'latlons': ','.join(latlons),
@@ -162,28 +75,33 @@ def main():
         'producer': 'harmonie_skandinavia_pinta',
         'apikey' : apikey
     }
-    
-    data = get_forecasts(args)
 
+    logging.info('Getting forecast...')
+    data = get_forecasts(args)
+    logging.info('Calculating precipitation sums...')
     data = io._calc_prec_sums(data, prec_column='PrecipitationInstantTotal').fillna(-99)
 
     logging.info('Data shape: {}'.format(data.shape))
     files = io.df_to_serving_file(data)
 
-    #with open(x_file, 'r') as f:
-    #    print(f.read())        
-
     result = io.predict_gcloud_ml('trains_lr',
-                                  'tiny_subset_2',
+                                  'tiny_subset_5',
                                   files,
                                   data,
                                   names)
     logging.info('Got predictions for {} stations. First station has {} values.'.format(len(result), len(next(iter(result.values())))))
 
-    print(result)
-    #print(stations)
-    #print(data)
+    # Insert into db
+    logging.info('Inserting results into db...')
+    db = _db.DBHandler()
+    db.insert_forecasts(result)
     
+    # Clean db
+    logging.info('Cleaning db...')
+    tolerance = timedelta(days=2)
+    db.clean_forecasts(tolerance)
+    
+    logging.info('Done')
     
 if __name__=='__main__':
 
