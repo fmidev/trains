@@ -102,12 +102,13 @@ def lr(features, labels, mode):
     assert mode == tf.estimator.ModeKeys.EVAL
 
     # Metrics
-    metrics = {'rmse': tf.metrics.root_mean_squared_error(labels, y_pred),
+    rmse = tf.metrics.root_mean_squared_error(labels, y_pred)
+    metrics = {'rmse': rmse,
                'mae': tf.metrics.mean_absolute_error(labels, y_pred),
-               'below10': tf.metrics.percentage_below(labels, y_pred, 10),
-               'below5': tf.metrics.percentage_below(labels, y_pred, 5),
-               'below3': tf.metrics.percentage_below(labels, y_pred, 3),
-               'below1': tf.metrics.percentage_below(labels, y_pred, 1)
+               'below10': tf.metrics.percentage_below(rmse, 10),
+               'below5': tf.metrics.percentage_below(rmse, 5),
+               'below3': tf.metrics.percentage_below(rmse, 3),
+               'below1': tf.metrics.percentage_below(rmse, 1)
                }
 
     return tf.estimator.EstimatorSpec(
