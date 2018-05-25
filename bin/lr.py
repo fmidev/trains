@@ -25,17 +25,17 @@ from lib import viz as _viz
 
 def serving_input_receiver_fn():
     """Build the serving inputs."""
-    
+
     # The outer dimension (None) allows us to batch up inputs for
     # efficiency. However, it also means that if we want a prediction
     # for a single instance, we'll need to wrap it in an outer list.
     inputs = {'X': tf.placeholder(dtype=tf.float64)}
-    
+
     #inputs = {}
     #for feat in get_input_columns():
     #    inputs[feat.name] = tf.placeholder(shape=[None], dtype=feat.dtype)
 
-    return tf.estimator.export.ServingInputReceiver(inputs, inputs)    
+    return tf.estimator.export.ServingInputReceiver(inputs, inputs)
 
 
 def lr(features, labels, mode):
@@ -43,7 +43,7 @@ def lr(features, labels, mode):
     model function for linear regression
     """
     # Define parameters
-    
+
     # Define placeholders for input
 #    X = tf.placeholder(tf.float32, name='X')
 #    y = tf.placeholder(tf.float32, name='y')
@@ -61,7 +61,7 @@ def lr(features, labels, mode):
 
     logging.debug('n_dim: {} | n_smaples: {}'.format(n_dim, n_samples))
     train_losses, val_losses = [], []
-            
+
     W = tf.get_variable("weights", (n_dim, 1),
                         initializer=tf.random_normal_initializer(),
                         dtype=tf.float64)
@@ -80,9 +80,9 @@ def lr(features, labels, mode):
         return tf.estimator.EstimatorSpec(
             mode=mode,
             predictions={"y_pred": y_pred},
-            export_outputs=export_outputs            
+            export_outputs=export_outputs
         )
-    
+
     # Define optimizer operation
     loss = tf.reduce_sum((y - y_pred) ** 2 / n_samples)
     optimizer = tf.train.AdamOptimizer()
@@ -92,20 +92,28 @@ def lr(features, labels, mode):
             loss,
             global_step=tf.train.get_global_step()
         )
-        
+
         return tf.estimator.EstimatorSpec(
             mode=mode,
             loss=loss,
             train_op=optimize
         )
-    
+
     assert mode == tf.estimator.ModeKeys.EVAL
-    rmse = tf.metrics.root_mean_squared_error(labels, y_pred)
-    
+
+    # Metrics
+    metrics = {'rmse': tf.metrics.root_mean_squared_error(labels, y_pred),
+               'mae': tf.metrics.mean_absolute_error(labels, y_pred),
+               'below10': tf.metrics.percentage_below(labels, y_pred, 10),
+               'below5': tf.metrics.percentage_below(labels, y_pred, 5),
+               'below3': tf.metrics.percentage_below(labels, y_pred, 3),
+               'below1': tf.metrics.percentage_below(labels, y_pred, 1)
+               }
+
     return tf.estimator.EstimatorSpec(
         mode=mode,
         loss=loss,
-        eval_metric_ops={'rmse': rmse }
+        eval_metric_ops=metrics
     )
 
 def main():
@@ -128,29 +136,29 @@ def main():
     logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
 
     # Define number of gradient descent loops
-    n_loops = 5000
+    n_loops = 10000
     batch_size = 100
-    
+
     model = tf.estimator.Estimator(
         model_fn=lr,
         model_dir=options.log_dir
     )
-    
+
     day_step = 30
     hour_step = 0
-    
+
     start = starttime
     end = start + timedelta(days=day_step, hours=hour_step)
-    
+
     while end <= endtime:
-        logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'), end.strftime('%Y-%m-%d %H:%M')))            
+        logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'), end.strftime('%Y-%m-%d %H:%M')))
 
         try:
             l_metadata, l_header, l_data = a.get_rows(options.dataset,
                                                       starttime=start,
                                                       endtime=end,
                                                       rowtype='label')
-            
+
             f_metadata, f_header, f_data = a.get_rows(options.dataset,
                                                       starttime=start,
                                                       endtime=end,
@@ -161,17 +169,17 @@ def main():
 
         if len(f_data) == 0 or len(l_data) == 0:
             start = end
-            end = start + timedelta(days=day_step, hours=hour_step)        
+            end = start + timedelta(days=day_step, hours=hour_step)
             continue
-        
+
         l_metadata, l_data = io.filter_train_type(l_metadata, l_data, traintypes=[0,1], sum_types=True)
         l_metadata, l_data = io.filter_labels(l_metadata, l_data, f_metadata, f_data, uniq=True) #, invert=True)
-        
+
         logging.debug('Labels metadata shape: {} | Labels shape: {}'.format(l_metadata.shape, l_data.shape))
         logging.debug('Features metadata shape: {} | Features shape: {}'.format(f_metadata.shape, f_data.shape))
 
         logging.info('Processing {} rows...'.format(len(f_data)))
-        
+
         assert l_data.shape[0] == f_data.shape[0]
 
         target = l_data[:,0]
@@ -179,29 +187,29 @@ def main():
 
         n_samples, n_dims = X_train.shape
         #    saver = tf.train.Saver()
-        
+
         model_filename = options.save_path+'/model_state.ckpt'
         export_dir = options.save_path+'/serving'
-            
+
         # Select random mini-batch
-        def input_train():        
+        def input_train():
             indices = np.random.choice(n_samples, batch_size)
             X_batch, y_batch = X_train[indices], y_train[indices]
             return X_batch, y_batch
-        
+
         def input_test():
             indices = np.random.choice(len(X_test), batch_size)
             X_batch, y_batch = X_test[indices], y_test[indices]
-            return X_batch, y_batch        
-        
+            return X_batch, y_batch
+
         model.train(input_fn=input_train, steps=n_loops)
         model.evaluate(input_fn=input_test, steps=1)
-        
+
         #feature_spec = {"X": tf.FixedLenFeature([29],tf.float32)}
         #feature_spec = {"X": tf.VarLenFeature(tf.float32)}
         #feature_spec = tf.feature_column.make_parse_example_spec(get_input_columns())
         #serving_input_fn = export.build_parsing_serving_input_receiver_fn(feature_spec)
-        
+
         #    io.export_tf_model(sess, export_dir, inputs={'X': X}, outputs={'y': y_pred}, serving_input_fn=serving_input_receiver_fn)
 
         # filename = options.output_path + '/training_loss.png'
@@ -209,13 +217,13 @@ def main():
 
         start = end
         end = start + timedelta(days=day_step, hours=hour_step)
- 
+
     model.export_savedmodel(
         export_dir,
         serving_input_receiver_fn
     )
-       
-    
+
+
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
@@ -233,9 +241,9 @@ if __name__=='__main__':
                         default='INFO',
                         help='options: DEBUG,INFO,WARNING,ERROR,CRITICAL')
     parser.add_argument('--output_path', type=str, default=None, help='Path where visualizations are saved')
-    
+
     options = parser.parse_args()
-    
+
     if options.save_path is None:
         options.save_path = 'models/'+options.dataset
 
