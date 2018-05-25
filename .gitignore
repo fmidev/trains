@@ -6,3 +6,4 @@ cnf/*.json
 .\#*
 *.pyc
 .DS_Store
+data/full
