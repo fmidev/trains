@@ -103,12 +103,22 @@ def lr(features, labels, mode):
 
     # Metrics
     rmse = tf.metrics.root_mean_squared_error(labels, y_pred)
+
+    total_error = tf.reduce_sum(tf.square(tf.sub(labels, tf.reduce_mean(labels))))
+    unexplained_error = tf.reduce_sum(tf.square(tf.sub(labels, y_pred)))
+    r_squared = tf.sub(1, tf.div(unexplained_error, total_error))
+
     metrics = {'rmse': rmse,
                'mae': tf.metrics.mean_absolute_error(labels, y_pred),
-               'below10': tf.metrics.percentage_below(rmse, 10),
-               'below5': tf.metrics.percentage_below(rmse, 5),
-               'below3': tf.metrics.percentage_below(rmse, 3),
-               'below1': tf.metrics.percentage_below(rmse, 1)
+               'rmse_below10': tf.metrics.percentage_below(rmse, 10),
+               'rmse_below5': tf.metrics.percentage_below(rmse, 5),
+               'rmse_below3': tf.metrics.percentage_below(rmse, 3),
+               'rmse_below1': tf.metrics.percentage_below(rmse, 1),
+               'y_pred_below10': tf.metrics.percentage_below(y_pred, 10),
+               'y_pred_below5': tf.metrics.percentage_below(y_pred, 5),
+               'y_pred_below3': tf.metrics.percentage_below(y_pred, 3),
+               'y_pred_below1': tf.metrics.percentage_below(y_pred, 1),
+               'r2': r_squared
                }
 
     return tf.estimator.EstimatorSpec(
