@@ -8,6 +8,7 @@ import itertools
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.estimator.export import export
+from tensorflow.python.framework import constant_op
 
 from sklearn.model_selection import train_test_split
 
@@ -104,21 +105,22 @@ def lr(features, labels, mode):
     # Metrics
     rmse = tf.metrics.root_mean_squared_error(labels, y_pred)
 
-    #total_error = tf.reduce_sum(tf.square((labels - tf.reduce_mean(labels))))
-    #unexplained_error = tf.reduce_sum(tf.square((labels - y_pred)))
-    #r_squared = (1 - tf.div(unexplained_error, total_error))
+    def r_squared(y_pred, labels):
+        total_error = tf.reduce_sum(tf.square((labels - tf.reduce_mean(labels))))
+        unexplained_error = tf.reduce_sum(tf.square((labels - y_pred)))
+        return tf.subtract(tf.constant(1., dtype='float64'), tf.div(unexplained_error, total_error)), constant_op.constant(1.)
 
     metrics = {'rmse': rmse,
                'mae': tf.metrics.mean_absolute_error(labels, y_pred),
-               'rmse_below10': tf.metrics.percentage_below(rmse, 10),
-               'rmse_below5': tf.metrics.percentage_below(rmse, 5),
-               'rmse_below3': tf.metrics.percentage_below(rmse, 3),
-               'rmse_below1': tf.metrics.percentage_below(rmse, 1),
-               'y_pred_below10': tf.metrics.percentage_below(y_pred, 10),
-               'y_pred_below5': tf.metrics.percentage_below(y_pred, 5),
-               'y_pred_below3': tf.metrics.percentage_below(y_pred, 3),
-               'y_pred_below1': tf.metrics.percentage_below(y_pred, 1),
-               #'r2': r_squared
+               'rmse_below_10': tf.metrics.percentage_below(rmse, 10),
+               'rmse_below_5': tf.metrics.percentage_below(rmse, 5),
+               'rmse_below_3': tf.metrics.percentage_below(rmse, 3),
+               'rmse_below_1': tf.metrics.percentage_below(rmse, 1),
+               'y_pred_below_10': tf.metrics.percentage_below(y_pred, 10),
+               'y_pred_below_5': tf.metrics.percentage_below(y_pred, 5),
+               'y_pred_below_3': tf.metrics.percentage_below(y_pred, 3),
+               'y_pred_below_1': tf.metrics.percentage_below(y_pred, 1),
+               'r2': r_squared(y_pred, labels)
                }
 
     return tf.estimator.EstimatorSpec(
@@ -143,11 +145,18 @@ def main():
     if not os.path.exists(options.output_path):
         os.makedirs(options.output_path)
 
+    model_filename = options.save_path+'/model_state.ckpt'
+    export_dir = options.save_path+'/serving'
+
     starttime, endtime = io.get_dates(options)
     logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
 
     # Define number of gradient descent loops
-    n_loops = 10000
+    if options.dev == 1:
+        n_loops = 100
+    else:
+        n_loops = 10000
+
     batch_size = 100
 
     model = tf.estimator.Estimator(
@@ -160,6 +169,7 @@ def main():
 
     start = starttime
     end = start + timedelta(days=day_step, hours=hour_step)
+    if end > start: end = endtime
 
     while end <= endtime:
         logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'), end.strftime('%Y-%m-%d %H:%M')))
@@ -198,9 +208,6 @@ def main():
 
         n_samples, n_dims = X_train.shape
         #    saver = tf.train.Saver()
-
-        model_filename = options.save_path+'/model_state.ckpt'
-        export_dir = options.save_path+'/serving'
 
         # Select random mini-batch
         def input_train():
@@ -243,6 +250,7 @@ if __name__=='__main__':
     parser.add_argument('--save_path', type=str, default=None, help='Model save path and filename')
     parser.add_argument('--dataset', type=str, default=None, help='Dataset name')
     parser.add_argument('--log_dir', type=str, default='/tmp/lr', help='Dataset name')
+    parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
     parser.add_argument('--db_config_file',
                         type=str,
                         default=None,
