@@ -105,10 +105,11 @@ def lr(features, labels, mode):
     # Metrics
     rmse = tf.metrics.root_mean_squared_error(labels, y_pred)
 
-    def r_squared(y_pred, labels):
-        total_error = tf.reduce_sum(tf.square((labels - tf.reduce_mean(labels))))
+    def r_squared(labels, y_pred):
         unexplained_error = tf.reduce_sum(tf.square((labels - y_pred)))
-        return tf.subtract(tf.constant(1., dtype='float64'), tf.div(unexplained_error, total_error)), constant_op.constant(1.)
+        total_error = tf.reduce_sum(tf.square((labels - tf.reduce_mean(labels))))
+        r2 = tf.subtract(tf.constant(1., dtype='float64'), tf.div(unexplained_error, total_error))
+        return r2, constant_op.constant(1.)
 
     metrics = {'rmse': rmse,
                'mae': tf.metrics.mean_absolute_error(labels, y_pred),
@@ -120,7 +121,7 @@ def lr(features, labels, mode):
                'y_pred_below_5': tf.metrics.percentage_below(y_pred, 5),
                'y_pred_below_3': tf.metrics.percentage_below(y_pred, 3),
                'y_pred_below_1': tf.metrics.percentage_below(y_pred, 1),
-               'r2': r_squared(y_pred, labels)
+               'r2': r_squared(labels, y_pred)
                }
 
     return tf.estimator.EstimatorSpec(
