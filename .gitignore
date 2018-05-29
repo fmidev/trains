@@ -7,3 +7,4 @@ cnf/*.json
 *.pyc
 .DS_Store
 data/full
+labels_vis_1_0_arch/
