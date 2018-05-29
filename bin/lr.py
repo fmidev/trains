@@ -169,7 +169,7 @@ def main():
 
     start = starttime
     end = start + timedelta(days=day_step, hours=hour_step)
-    if end > start: end = endtime
+    if end > endtime: end = endtime
 
     while end <= endtime:
         logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'), end.strftime('%Y-%m-%d %H:%M')))
