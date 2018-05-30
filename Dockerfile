@@ -1,12 +1,14 @@
 FROM python:3.6
 
+RUN chgrp -R 0 /a && \
+    chmod -R g=u /a
+
 RUN mkdir /a
 WORKDIR /a
 
-RUN groupadd --system --gid 92 www && \
-    useradd --system --uid 320 --gid www www #--no-log-init www
-
-RUN chown www:www /a
+#RUN groupadd --system --gid 92 www && \
+#    useradd --system --uid 320 --gid www www #--no-log-init www
+# RUN chown www:www /a
 
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
