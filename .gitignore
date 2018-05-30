@@ -1,6 +1,7 @@
 api/cnf/database.ini
 cnf/database.ini
 cnf/*.json
+cnf/pred_db.ini
 *~
 \#*\#
 .\#*
