@@ -1,9 +1,9 @@
 FROM python:3.6
 
+RUN sudo mkdir /a
 RUN chgrp -R 0 /a && \
     chmod -R g=u /a
 
-RUN mkdir /a
 WORKDIR /a
 
 #RUN groupadd --system --gid 92 www && \
