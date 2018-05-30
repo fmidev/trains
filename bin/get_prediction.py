@@ -18,29 +18,29 @@ import pandas as pd
 from mlfdb import mlfdb
 import lib.io
 from lib import dbhandler as _db
-        
+
 def get_forecasts(args):
     """
     Get forecasts
-    
+
     args : dict
            params to be given in creating url
-    
+
     return pandas df
     """
 
     url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&endtime=data&latlons={latlons}&param={params}'.format(**args)
-    
+
     logging.debug('Loading data from SmartMet Server...')
     logging.info('Using url: {}'.format(url))
 
     with urllib.request.urlopen(url, timeout=6000) as u:
         rawdata = args['params'].replace(',',';')+'\n'+u.read().decode("utf-8")
     logging.debug('Data loaded')
-    
-    obsf = StringIO(rawdata)    
-    df = pd.read_csv(obsf, sep=";")    
-    
+
+    obsf = StringIO(rawdata)
+    df = pd.read_csv(obsf, sep=";")
+
     return df
 
 def main():
@@ -49,21 +49,23 @@ def main():
     """
 
     io = lib.io.IO()
-    
+
     params, _ = io.read_parameters(options.parameters_filename)
     params.append('origintime')
     stations = io.get_train_stations(filename=options.stations_filename)
 
-    #max_count = 1
+    max_count = 5000
+    if options.dev == 1: max_count=1
+
     latlons = []
     names = {}
     for name, station in stations.items():
-        #if len(latlons) > max_count:
-        #    break
+        if len(latlons) >= max_count:
+            break
         latlon = str(station['lat'])+','+str(station['lon'])
         latlons.append(latlon)
         names[latlon] = name
-    
+
     logging.info('Getting delay forecast for {} locations...'.format(len(stations)))
 
     # Create url and get data
@@ -85,24 +87,27 @@ def main():
     files = io.df_to_serving_file(data)
 
     result = io.predict_gcloud_ml('trains_lr',
-                                  'tiny_subset_5',
+                                  'tiny_subset_6',
                                   files,
                                   data,
                                   names)
     logging.info('Got predictions for {} stations. First station has {} values.'.format(len(result), len(next(iter(result.values())))))
 
-    # Insert into db
-    logging.info('Inserting results into db...')
-    db = _db.DBHandler()
-    db.insert_forecasts(result)
-    
-    # Clean db
-    logging.info('Cleaning db...')
-    tolerance = timedelta(days=2)
-    db.clean_forecasts(tolerance)
-    
+    if options.dev == 0:
+        # Insert into db
+        logging.info('Inserting results into db...')
+        db = _db.DBHandler()
+        db.insert_forecasts(result)
+
+        # Clean db
+        logging.info('Cleaning db...')
+        tolerance = timedelta(days=2)
+        db.clean_forecasts(tolerance)
+    else:
+        logging.info('Results are: {}'.format(result))
+
     logging.info('Done')
-    
+
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
@@ -114,13 +119,17 @@ if __name__=='__main__':
                         type=str,
                         default='cnf/forecast_parameters.txt',
                         help='Parameters file name')
+    parser.add_argument('--dev',
+                        type=int,
+                        default=0,
+                        help='Set 1 for development mode')
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',
                         help='options: DEBUG,INFO,WARNING,ERROR,CRITICAL')
 
     options = parser.parse_args()
-    
+
     debug=False
 
     logging_level = {'DEBUG':logging.DEBUG,
