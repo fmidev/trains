@@ -1,6 +1,9 @@
 FROM python:3.6
 
-RUN sudo mkdir /a
+ADD bin /a/bin
+ADD cnf /a/cnf
+
+# RUN sudo mkdir /a
 RUN chgrp -R 0 /a && \
     chmod -R g=u /a
 
@@ -33,8 +36,7 @@ RUN echo "deb http://packages.cloud.google.com/apt cloud-sdk-jessie main" | tee 
 
 # ENV PYTHONPATH "/usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk/lib:/usr/lib/google-cloud-sdk/lib/yaml"
 
-ADD bin /a/bin
-ADD cnf /a/cnf
+
 
 RUN mkdir -p /home/www/.config/gcloud/logs && chown -R www:www /home/www
 
