@@ -726,14 +726,14 @@ class IO:
         return : list
                  files
         """
-        data = df.drop(columns=['time','place'])
+        pred_data = df.drop(columns=['time','place', 'origintime'])
         files = []
 
         tmp = tempfile.NamedTemporaryFile(delete=False)
         i = 0
         f = open(tmp.name, 'w')
 
-        pred_data = data.drop(columns=['origintime'])
+        #pred_data = data.drop(columns=['origintime', 'time', 'place'])
         for h,values in pred_data.iterrows():
             i += 1
 

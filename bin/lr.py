@@ -58,7 +58,7 @@ def lr(features, labels, mode):
         n_samples, n_dim = X.shape
     except ValueError:
         n_samples = None
-        n_dim = 25
+        n_dim = 28
 
     logging.debug('n_dim: {} | n_smaples: {}'.format(n_dim, n_samples))
     train_losses, val_losses = [], []
@@ -166,6 +166,7 @@ def main():
     )
 
     params, param_names = io.read_parameters('cnf/parameters.txt', drop=2)
+    param_names += ['count_flash', 'precipitation3h', 'precipitation6h']
 
     day_step = 30
     hour_step = 0
@@ -201,7 +202,6 @@ def main():
 
         logging.debug('Labels metadata shape: {} | Labels shape: {}'.format(l_metadata.shape, l_data.shape))
         logging.debug('Features metadata shape: {} | Features shape: {}'.format(f_metadata.shape, f_data.shape))
-
         logging.info('Processing {} rows...'.format(len(f_data)))
 
         assert l_data.shape[0] == f_data.shape[0]
