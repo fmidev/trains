@@ -42,7 +42,7 @@ def main():
                               starttime=start,
                               endtime=end,
                               rowtype='feature',
-                              return_type='pandas',
+                              return_type='pandas'),
                               parameters=param_names)
 
         except ValueError as e:
