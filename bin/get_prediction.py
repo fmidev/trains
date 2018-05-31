@@ -87,7 +87,7 @@ def main():
     files = io.df_to_serving_file(data)
 
     result = io.predict_gcloud_ml('trains_lr',
-                                  'tiny_subset_8',
+                                  'tiny_subset_9',
                                   files,
                                   data,
                                   names)
