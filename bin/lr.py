@@ -239,10 +239,13 @@ def main():
         start = end
         end = start + timedelta(days=day_step, hours=hour_step)
 
-    model.export_savedmodel(
-        export_dir,
-        serving_input_receiver_fn
-    )
+    try:
+        model.export_savedmodel(
+            export_dir,
+            serving_input_receiver_fn
+        )
+    except as e:
+        logging.error("Problems while exporting model: {}".format(e))
 
 
 if __name__=='__main__':
