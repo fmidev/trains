@@ -244,7 +244,7 @@ def main():
             export_dir,
             serving_input_receiver_fn
         )
-    except as e:
+    except Exception as e:
         logging.error("Problems while exporting model: {}".format(e))
 
 
