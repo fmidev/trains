@@ -57,6 +57,13 @@ services:
       - ~:/root:ro
       - ~/trains:/a
 #############
+  rm_params:
+    image: tervo/ml:cpu
+    command: python -u bin/remove_parameters.py --src_dataset ${DATASET:-trains-1.0} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO}
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+#############
   lr:
     volumes:
       - ~:/root:ro
