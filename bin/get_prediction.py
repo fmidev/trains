@@ -82,12 +82,12 @@ def main():
     data = get_forecasts(args)
     logging.info('Calculating precipitation sums...')
     data = io._calc_prec_sums(data, prec_column='PrecipitationInstantTotal').fillna(-99)
-
     logging.info('Data shape: {}'.format(data.shape))
+
     files = io.df_to_serving_file(data)
 
     result = io.predict_gcloud_ml('trains_lr',
-                                  'tiny_subset_6',
+                                  'tiny_subset_8',
                                   files,
                                   data,
                                   names)
