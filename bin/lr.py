@@ -58,7 +58,7 @@ def lr(features, labels, mode):
         n_samples, n_dim = X.shape
     except ValueError:
         n_samples = None
-        n_dim = 28
+        n_dim = 25
 
     logging.debug('n_dim: {} | n_smaples: {}'.format(n_dim, n_samples))
     train_losses, val_losses = [], []
@@ -239,14 +239,10 @@ def main():
         start = end
         end = start + timedelta(days=day_step, hours=hour_step)
 
-    try:
-        model.export_savedmodel(
-            export_dir,
-            serving_input_receiver_fn
-        )
-    except Exception as e:
-        logging.error("Problems while exporting model: {}".format(e))
-
+    model.export_savedmodel(
+        export_dir,
+        serving_input_receiver_fn
+    )
 
 if __name__=='__main__':
 
