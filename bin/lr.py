@@ -165,6 +165,8 @@ def main():
         model_dir=options.log_dir
     )
 
+    params, param_names = io.read_parameters('cnf/parameters.txt', drop=2)
+
     day_step = 30
     hour_step = 0
 
@@ -185,7 +187,7 @@ def main():
                                                       starttime=start,
                                                       endtime=end,
                                                       rowtype='feature',
-                                                      parameters=[])
+                                                      parameters=param_names)
         except ValueError as e:
             f_data, l_data = [], []
 
