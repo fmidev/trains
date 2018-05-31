@@ -25,9 +25,17 @@ def main():
     starttime, endtime = io.get_dates(options)
     logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
 
-    params, param_names = io.read_parameters('cnf/parameters.txt', drop=2)
+    _, param_names = io.read_parameters('cnf/parameters.txt', drop=2)
+    param_names += ['count_flash', 'precipitation3h', 'precipitation6h']
 
-    day_step = 30
+    _, new_param_names = io.read_parameters('cnf/parameters_shorten.txt', drop=2)
+    new_param_names += ['count_flash', 'precipitation3h', 'precipitation6h']
+
+    meta_columns = ['loc_id', 'time', 'lon', 'lat']
+
+    count = 0
+
+    day_step = 1
     hour_step = 0
 
     start = starttime
@@ -42,7 +50,7 @@ def main():
                               starttime=start,
                               endtime=end,
                               rowtype='feature',
-                              return_type='pandas'),
+                              return_type='pandas',
                               parameters=param_names)
 
         except ValueError as e:
@@ -51,14 +59,28 @@ def main():
             end = start + timedelta(days=day_step, hours=hour_step)
             continue
 
-        print(data)
+        logging.debug(data.iloc[0:3])
         #logging.debug('Features metadata shape: {} | Features shape: {}'.format(f_metadata.shape, f_data.shape))
 
-        logging.info('Processing {} rows...'.format(len(f_data)))
+        to_be_dropped = []
+        for col in data:
+            if col not in new_param_names and col not in meta_columns:
+                to_be_dropped.append(col)
+
+        data.drop(columns=to_be_dropped, inplace=True)
+
+        logging.debug(data.iloc[0:3])
+        logging.info('Processing {} rows...'.format(len(data)))
+
+        count += a.add_rows_from_df(df=data,
+                                    _type='feature',
+                                    dataset=options.dst_dataset
+                                    )
 
         start = end
         end = start + timedelta(days=day_step, hours=hour_step)
 
+    logging.info('Inserted {} rows into dataset {}'.format(count, options.dst_dataset))
 
 if __name__=='__main__':
 
