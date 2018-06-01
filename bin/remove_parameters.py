@@ -72,10 +72,11 @@ def main():
         logging.debug(data.iloc[0:3])
         logging.info('Processing {} rows...'.format(len(data)))
 
-        count += a.add_rows_from_df(df=data,
-                                    _type='feature',
-                                    dataset=options.dst_dataset
-                                    )
+        if len(data) > 0:
+            count += a.add_rows_from_df(df=data,
+                                        _type='feature',
+                                        dataset=options.dst_dataset
+                                        )
 
         start = end
         end = start + timedelta(days=day_step, hours=hour_step)
