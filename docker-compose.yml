@@ -57,9 +57,16 @@ services:
       - ~:/root:ro
       - ~/trains:/a
 #############
-  rm_params:
+  copy_dataset:
     image: tervo/ml:cpu
-    command: python -u bin/remove_parameters.py --src_dataset ${DATASET:-trains-1.0} --dst_dataset ${DST_DATASET:-trains-1.1} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/remove_parameters.py --src_dataset ${SRC_DATASET:-trains-1.0} --dst_dataset ${DST_DATASET:-trains-1.1} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --src_parameters ${SRC_PARAMETERS:-cnf/parameters.txt} --dst_parameters ${DST_PARAMETERS:-cnf/parameters_shorten.txt} --logging_level ${LOGGING:-INFO}
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+#############
+  fixprec:
+    image: tervo/ml:cpu
+    command: python -u bin/fix_precipitation_sum.py --dataset ${DATASET:-trains-1.0} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-02} --logging_level ${LOGGING:-INFO}
     volumes:
       - ~:/root:ro
       - ~/trains:/a

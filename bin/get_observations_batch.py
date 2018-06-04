@@ -24,7 +24,7 @@ import lib.io
 def split_timerange(starttime, endtime, days=1, hours=0, timestep=60):
     """
     Split timerange to n days
-    
+
     starttime : Datetime
                 starttime
     endtime : Datetime
@@ -41,7 +41,7 @@ def split_timerange(starttime, endtime, days=1, hours=0, timestep=60):
     chunks = []
     start = starttime
     end = start + timedelta(days=days, hours=hours)
-    while end <= endtime:        
+    while end <= endtime:
         chunks.append((start + timedelta(minutes=timestep), end))
         start = end
         end = start + timedelta(days=days, hours=hours)
@@ -49,32 +49,10 @@ def split_timerange(starttime, endtime, days=1, hours=0, timestep=60):
 
 def log_process(count, total):
     """
-    Log process 
+    Log process
     """
     if count%10 == 0:
         logging.info('Handled {}/{} rows...'.format(count, total))
-
-def get_prec_sum(args):
-    """ 
-    Get precipitation sum
-    """
-    url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timestep=60&starttime={starttime}&endtime={endtime}&param=stationname,time,place,lat,lon,precipitation1h&maxdistance={maxdistance}&numberofstations=5".format(**args)
-
-    logging.debug('Using url: {}'.format(url))
-    
-    with urllib.request.urlopen(url, timeout=300) as u:
-        rawdata = u.read().decode("utf-8")
-
-    logging.debug('Precipitation data loaded')
-    
-    if len(rawdata) == 0:
-        return pd.DataFrame()
-
-    obsf = StringIO(rawdata)    
-    obs_df = pd.read_csv(obsf, sep=";", header=None)
-    obs_df.rename(columns={1:'time'}, inplace=True)
-    return obs_df
-    
 
 def get_flashes(args):
     """
@@ -82,8 +60,8 @@ def get_flashes(args):
 
     args : dict
            params to be given in creating url
-    
-    return metadata, data (list)    
+
+    return metadata, data (list)
     """
 
     # Getting flashes is slow. Don't do it for winter times
@@ -91,11 +69,11 @@ def get_flashes(args):
     if int(d.strftime('%m')) < 6 or int(d.strftime('%m')) > 8:
         logging.debug('Not thunder storm season, returning 0 for flashes...')
         return pd.DataFrame()
-    
+
     url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?param=peak_current&producer=flash&format=ascii&separator=;&starttime={starttime}&endtime={endtime}&latlon={latlon}:{maxdistance}".format(**args)
 
     #url = "http://data.fmi.fi/fmi-apikey/9fdf9977-5d8f-4a1f-9800-d80a007579c9/timeseries?param=time,peak_current&producer=flash&format=ascii&separator=;&starttime=2017-06-08T00:00:00&endtime=2017-06-08T18:00:00&latlon=57.1324,24.3574:30&timeformat=epoch&tz=local"
-    
+
     logging.debug('Using url: {}'.format(url))
 
     rawdata = []
@@ -109,39 +87,39 @@ def get_flashes(args):
 
     if len(rawdata) == 0:
         return pd.DataFrame()
-    
-    obsf = StringIO(rawdata)    
+
+    obsf = StringIO(rawdata)
     obs_df = pd.read_csv(obsf, sep=";", header=None)
     obs_df.rename(columns={0:'time'}, inplace=True)
 
     return obs_df
-        
+
 def get_ground_obs(params, args):
     """
     Get ground observations which can be fetched directly from
     timeseries
-    
+
     params : list
              list of params
     args : dict
            params to be given in creating url
-    
+
     return metadata, data (list)
     """
 
     url = 'http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&starttime={starttime}&endtime={endtime}&timestep=60&param=stationname,{params}&maxdistance={maxdistance}&numberofstations=5'.format(**args)
-    
+
     logging.debug('Loading data from SmartMet Server...')
     logging.debug('Using url: {}'.format(url))
 
     with urllib.request.urlopen(url, timeout=300) as u:
         rawdata = u.read().decode("utf-8")
     logging.debug('Observations loaded')
-    
+
     if len(rawdata) == 0:
         raise ValueError('No data for location {} and time {}'.format(args['latlon'], args['endtime']))
 
-    obsf = StringIO(rawdata)    
+    obsf = StringIO(rawdata)
     obs_df = pd.read_csv(obsf, sep=";", header=None)
     obs_df.rename(columns={1:'time'}, inplace=True)
 
@@ -156,16 +134,16 @@ def process_timerange(starttime, endtime, params, param_names, producer):
     a = db.mlfdb(options.db_config_file)
     io = lib.io.IO()
     process_id = os.getpid()
-    
+
     startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
     endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
-    
+
     logging.info('Process {}: Processing time {} - {}...'.format(process_id, startstr, endstr))
 
     # Get labels, features and filter labels that do not have features
     try:
         l_metadata, l_header, l_data = a.get_rows(options.dataset, rowtype='label', starttime=starttime, endtime=endtime)
-        f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)    
+        f_metadata, f_header, f_data = a.get_rows(options.dataset, rowtype='feature', starttime=starttime, endtime=endtime)
         filt_metadata, _ = io.filter_labels(l_metadata, l_data, f_metadata, f_data, invert=True, uniq=True)
     except ValueError as e:
         logging.debug(e)
@@ -174,8 +152,8 @@ def process_timerange(starttime, endtime, params, param_names, producer):
     latlons = set()
     for row in filt_metadata:
         latlons.add(str(row[3])+','+str(row[2]))
-                    
-    logging.info('Process {}: There are {} (of total {}) lines to process...'.format(process_id, len(filt_metadata), len(l_metadata)))    
+
+    logging.info('Process {}: There are {} (of total {}) lines to process...'.format(process_id, len(filt_metadata), len(l_metadata)))
 
     if len(filt_metadata) == 0:
         return 0
@@ -191,7 +169,7 @@ def process_timerange(starttime, endtime, params, param_names, producer):
         startstr = starttime.strftime('%Y-%m-%dT%H:%M:%S')
         endstr = endtime.strftime('%Y-%m-%dT%H:%M:%S')
         prec_start = starttime - timedelta(hours=6)
-        
+
         args = {
             'latlon': latlon,
             'params': ','.join(params),
@@ -199,9 +177,9 @@ def process_timerange(starttime, endtime, params, param_names, producer):
             'endtime': endstr,
             'producer': options.producer,
             'apikey' : apikey,
-            'maxdistance' : 100000 
+            'maxdistance' : 100000
         }
-        
+
         flash_start = starttime - timedelta(hours=1)
         flash_args = {
             'starttime' : flash_start.timestamp(), #strftime('%Y-%m-%dT%H:%M:%S'),
@@ -214,11 +192,11 @@ def process_timerange(starttime, endtime, params, param_names, producer):
 
         def get_obs(params, args, flash_args, label_metadata, i=0):
             i += 1
-            try: 
+            try:
                 obs_df = get_ground_obs(params, args)
-                obs_df = io.find_best_station(obs_df)        
+                obs_df = io.find_best_station(obs_df)
                 metadata_df, data_df = io.filter_ground_obs(obs_df, label_metadata)
-                
+
                 flash_df = get_flashes(flash_args)
                 data_df = io.filter_flashes(flash_df, data_df)
 
@@ -233,9 +211,9 @@ def process_timerange(starttime, endtime, params, param_names, producer):
                     metadata_df, data_df = get_obs(params, args, flash_args, label_metadata, i)
                 else:
                     raise urllib.error.URLError()
-                
+
             return metadata_df, data_df
-            
+
         try:
             metadata_df, data_df = get_obs(params, args, flash_args, label_metadata)
         except ValueError as e:
@@ -260,27 +238,27 @@ def process_timerange(starttime, endtime, params, param_names, producer):
                     raise psycopg2.OperationalError()
 
             return count
-                                
+
         if len(data) > 0:
-            # Save to database        
+            # Save to database
             header = param_names[2:] + ['count_flash', 'precipitation3h', 'precipitation6h']
             count += add_rows(header, data, metadata, options.dataset)
 
         if placecount%10 == 0:
             logging.info('Process {}: {}/{} locations processed ({} rows inserted)...'.format(process_id, placecount, len(latlons), count))
-    
+
     return count
 
 def main():
     """
     Get observations near locations from SmartMet Server
-    
+
     Data start and end time and timestep is fetched from the
     data. Dataset is assumed coherent in means of time and
     locations. I.e. timestep is assumed to be constant between start
-    and end time. 
+    and end time.
     """
-    
+
     # Initialize process pool
     job_count = options.job_count
     if job_count < 0:
@@ -288,7 +266,7 @@ def main():
     pool = multiprocessing.Pool(job_count)
 
     a = db.mlfdb(options.db_config_file)
-    io = lib.io.IO()    
+    io = lib.io.IO()
     params, param_names = io.read_parameters('cnf/parameters.txt')
 
     if options.replace:
@@ -303,7 +281,7 @@ def main():
     total_count = [p.get() for p in res]
 
     logging.info('Added {} rows observations to db.'.format(sum(total_count)))
-    
+
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
@@ -349,7 +327,7 @@ if __name__=='__main__':
 
 
     options = parser.parse_args()
-    
+
     debug=False
 
     logging_level = {'DEBUG':logging.DEBUG,

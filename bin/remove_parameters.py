@@ -25,10 +25,10 @@ def main():
     starttime, endtime = io.get_dates(options)
     logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
 
-    _, param_names = io.read_parameters('cnf/parameters.txt', drop=2)
+    _, param_names = io.read_parameters(options.src_parameters, drop=2)
     param_names += ['count_flash', 'precipitation3h', 'precipitation6h']
 
-    _, new_param_names = io.read_parameters('cnf/parameters_shorten.txt', drop=2)
+    _, new_param_names = io.read_parameters(options.dst_parameters, drop=2)
     new_param_names += ['count_flash', 'precipitation3h', 'precipitation6h']
 
     meta_columns = ['loc_id', 'time', 'lon', 'lat']
@@ -91,6 +91,8 @@ if __name__=='__main__':
     parser.add_argument('--output_path', type=str, default=None, help='Output save path')
     parser.add_argument('--src_dataset', type=str, default=None, help='Source dataset name')
     parser.add_argument('--dst_dataset', type=str, default=None, help='Destination dataset name')
+    parser.add_argument('--src_parameters', type=str, default=None, help='Source parameters conf file')
+    parser.add_argument('--dst_parameters', type=str, default=None, help='Destination parameters conf file')
     parser.add_argument('--db_config_file',
                         type=str,
                         default=None,
