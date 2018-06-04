@@ -678,7 +678,7 @@ class IO:
 
         for h,values in obs.iterrows():
             prec = values[prec_column]
-            if prec == -1: prec = 0
+            if prec < 0: prec = 0
             sum_3h.append(prec)
             sum_6h.append(prec)
 
