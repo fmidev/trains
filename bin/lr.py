@@ -58,7 +58,7 @@ def lr(features, labels, mode):
         n_samples, n_dim = X.shape
     except ValueError:
         n_samples = None
-        n_dim = 28
+        n_dim = options.n_dim
 
     logging.debug('n_dim: {} | n_smaples: {}'.format(n_dim, n_samples))
     train_losses, val_losses = [], []
@@ -150,41 +150,37 @@ def main():
     export_dir = options.save_path+'/serving'
 
     starttime, endtime = io.get_dates(options)
-    logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
+    logging.info('Using feature dataset {}, label dataset {} and time range {} - {}'.format(options.feature_dataset,
+                                                                                            options.label_dataset,
+                                                                                            starttime.strftime('%Y-%m-%d'),
+                                                                                            endtime.strftime('%Y-%m-%d')))
 
     # Define number of gradient descent loops
-    if options.dev == 1:
-        n_loops = 100
-    else:
-        n_loops = 10000
-
-    batch_size = 100
-
     model = tf.estimator.Estimator(
         model_fn=lr,
         model_dir=options.log_dir
     )
 
-    params, param_names = io.read_parameters('cnf/parameters.txt', drop=2)
+    params, param_names = io.read_parameters(options.parameters_file, drop=2)
     param_names += ['count_flash', 'precipitation3h', 'precipitation6h']
 
-    day_step = 30
-    hour_step = 0
+    options.n_dim = len(param_names)
 
     start = starttime
-    end = start + timedelta(days=day_step, hours=hour_step)
+    end = start + timedelta(days=options.day_step, hours=options.hour_step)
     if end > endtime: end = endtime
 
     while end <= endtime:
-        logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'), end.strftime('%Y-%m-%d %H:%M')))
+        logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'),
+                                                            end.strftime('%Y-%m-%d %H:%M')))
 
         try:
-            l_metadata, l_header, l_data = a.get_rows(options.dataset,
+            l_metadata, l_header, l_data = a.get_rows(options.label_dataset,
                                                       starttime=start,
                                                       endtime=end,
                                                       rowtype='label')
 
-            f_metadata, f_header, f_data = a.get_rows(options.dataset,
+            f_metadata, f_header, f_data = a.get_rows(options.feature_dataset,
                                                       starttime=start,
                                                       endtime=end,
                                                       rowtype='feature',
@@ -194,7 +190,7 @@ def main():
 
         if len(f_data) == 0 or len(l_data) == 0:
             start = end
-            end = start + timedelta(days=day_step, hours=hour_step)
+            end = start + timedelta(days=options.day_step, hours=options.hour_step)
             continue
 
         l_metadata, l_data = io.filter_train_type(l_metadata, l_data, traintypes=[0,1], sum_types=True)
@@ -214,16 +210,16 @@ def main():
 
         # Select random mini-batch
         def input_train():
-            indices = np.random.choice(n_samples, batch_size)
+            indices = np.random.choice(n_samples, options.batch_size)
             X_batch, y_batch = X_train[indices], y_train[indices]
             return X_batch, y_batch
 
         def input_test():
-            indices = np.random.choice(len(X_test), batch_size)
+            indices = np.random.choice(len(X_test), options.batch_size)
             X_batch, y_batch = X_test[indices], y_test[indices]
             return X_batch, y_batch
 
-        model.train(input_fn=input_train, steps=n_loops)
+        model.train(input_fn=input_train, steps=options.n_loops)
         model.evaluate(input_fn=input_test, steps=1)
 
         #feature_spec = {"X": tf.FixedLenFeature([29],tf.float32)}
@@ -237,7 +233,7 @@ def main():
         # viz.plot_learning(np.array(train_losses), np.array(val_losses), filename)
 
         start = end
-        end = start + timedelta(days=day_step, hours=hour_step)
+        end = start + timedelta(days=options.day_step, hours=options.hour_step)
 
     model.export_savedmodel(
         export_dir,
@@ -250,7 +246,8 @@ if __name__=='__main__':
     parser.add_argument('--starttime', type=str, help='Start time of the classification data interval')
     parser.add_argument('--endtime', type=str, help='End time of the classification data interval')
     parser.add_argument('--save_path', type=str, default=None, help='Model save path and filename')
-    parser.add_argument('--dataset', type=str, default=None, help='Dataset name')
+    parser.add_argument('--feature_dataset', type=str, default=None, help='Dataset name for features')
+    parser.add_argument('--label_dataset', type=str, default=None, help='Dataset name for labels')
     parser.add_argument('--log_dir', type=str, default='/tmp/lr', help='Dataset name')
     parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
     parser.add_argument('--db_config_file',
@@ -265,11 +262,27 @@ if __name__=='__main__':
 
     options = parser.parse_args()
 
+    if options.feature_dataset is None:
+        options.feature_dataset = 'trains-1.1'
+
+    if options.label_dataset is None:
+        options.label_dataset = 'trains-1.0'
+
     if options.save_path is None:
-        options.save_path = 'models/'+options.dataset
+        options.save_path = 'models/'+options.feature_dataset
 
     if options.output_path is None:
-        options.output_path = 'results/'+options.dataset
+        options.output_path = 'results/'+options.feature_dataset
+
+    if options.dev == 1: options.n_loops = 100
+    else: options.n_loops = 10000
+
+    options.batch_size = 100
+
+    options.day_step = 30
+    options.hour_step = 0
+
+    options.parameters_file = 'cnf/parameters_shorten.txt'
 
     debug=False
 
