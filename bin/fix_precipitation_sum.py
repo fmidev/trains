@@ -15,18 +15,19 @@ from ml_feature_db.api.mlfdb import mlfdb as db
 from lib import io as _io
 from lib import viz as _viz
 
-def get_prec_sum(args):
+def get_prec_sum(args, i, total):
     """
     Get precipitation sum
     """
     url = "http://data.fmi.fi/fmi-apikey/{apikey}/timeseries?format=ascii&separator=;&producer={producer}&tz=local&timeformat=epoch&latlon={latlon}&timestep=60&starttime={starttime}&endtime={endtime}&param=stationname,time,place,lat,lon,precipitation1h&maxdistance={maxdistance}&numberofstations=5".format(**args)
 
+    logging.info('Fetching precipitation data (location {}/{})...'.format(i, total))
     logging.debug('Using url: {}'.format(url))
 
     with urllib.request.urlopen(url, timeout=300) as u:
         rawdata = u.read().decode("utf-8")
 
-    logging.debug('Precipitation data loaded')
+    logging.info('Precipitation data loaded')
 
     if len(rawdata) == 0:
         return pd.DataFrame()
@@ -45,23 +46,22 @@ def main():
 
     #a = mlfdb.mlfdb()
     a = db.mlfdb()
-    a.create_index()
     io = _io.IO()
     viz = _viz.Viz()
 
     starttime, endtime = io.get_dates(options)
-    logging.info('Using time range {} - {}'.format(starttime.strftime('%Y-%m-%d'), endtime.strftime('%Y-%m-%d')))
+    logging.info('Using dataset {} and time range {} - {}'.format(options.dataset,
+                                                                  starttime.strftime('%Y-%m-%d'),
+                                                                  endtime.strftime('%Y-%m-%d')))
 
     param_names = ['max_precipitation1h', 'precipitation3h', 'precipitation6h']
     meta_columns = ['loc_id', 'time', 'lon', 'lat']
     params = ['time','stationname','precipitation1h']
 
-    count = 0
-
-    day_step = 1
+    day_step = 10
     hour_step = 0
 
-    start = starttime - timedelta(hours=6)
+    start = starttime
     end = starttime + timedelta(days=day_step, hours=hour_step)
     if end > endtime: end = endtime
 
@@ -90,24 +90,27 @@ def main():
 
         locs = data.loc_id.unique()
 
+        full_data = None
+
+        i = 0
         for loc in locs:
             timerange = data.loc[data['loc_id'] == loc]
-            starttime = dt.datetime.fromtimestamp(timerange.iloc[0].time)
-            endtime = dt.datetime.fromtimestamp(timerange.iloc[-1].time)
+            loc_starttime = dt.datetime.fromtimestamp(timerange.iloc[0].time)
+            loc_endtime = dt.datetime.fromtimestamp(timerange.iloc[-1].time)
             latlon = str(timerange.iloc[0].lat)+','+str(timerange.iloc[0].lon)
-            query_starttime = starttime - timedelta(hours=6)
+            query_starttime = loc_starttime - timedelta(hours=6)
 
             args = {
             'latlon': latlon,
             'params': ','.join(params),
             'starttime' : query_starttime.strftime('%Y-%m-%dT%H:%M:%S'),
-            'endtime': endtime.strftime('%Y-%m-%dT%H:%M:%S'),
+            'endtime': loc_endtime.strftime('%Y-%m-%dT%H:%M:%S'),
             'producer': 'fmi',
             'apikey' : apikey,
             'maxdistance' : 100000
             }
 
-            prec_data = io.find_best_station(get_prec_sum(args))
+            prec_data = io.find_best_station(get_prec_sum(args, (i+1), len(locs)))
             prec_data = io.filter_precipitation(prec_data, prec_column=5)
 
             prec_data.loc[:,'loc_id'] = timerange.iloc[0].loc_id
@@ -119,20 +122,25 @@ def main():
             prec_data.drop(columns=[2,3,4], inplace=True)
             prec_data.fillna(-99, inplace=True)
 
-            #print(prec_data)
-
             if len(data) > 0:
-                count += a.add_rows_from_df(df=prec_data,
-                                            _type='feature',
-                                            dataset=options.dataset,
-                                            columns=param_names,
-                                            update=True
-                                            )
+                if full_data is None:
+                    full_data = prec_data
+                else:
+                    full_data = full_data.append(prec_data)
+            i += 1
 
-        start = end - timedelta(hours=6)
+        logging.info('Updating db ({} rows)...'.format(len(full_data)))
+        count = a.update_rows_df(df=full_data,
+                                 _type='feature',
+                                 dataset=options.dataset,
+                                 columns=param_names
+                                 )
+        logging.info('{} rows updated'.format(count))
+
+        start = end # - timedelta(hours=6)
         end = start + timedelta(days=day_step, hours=hour_step)
 
-    logging.info('Inserted {} rows into dataset {}'.format(count, options.dst_dataset))
+    logging.info('Finished')
 
 if __name__=='__main__':
 

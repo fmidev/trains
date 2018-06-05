@@ -66,7 +66,7 @@ services:
 #############
   fixprec:
     image: tervo/ml:cpu
-    command: python -u bin/fix_precipitation_sum.py --dataset ${DATASET:-trains-1.0} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-02} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/fix_precipitation_sum.py --dataset ${DATASET:-prectest} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-02} --logging_level ${LOGGING:-INFO}
     volumes:
       - ~:/root:ro
       - ~/trains:/a
