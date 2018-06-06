@@ -81,13 +81,13 @@ def main():
     logging.info('Getting forecast...')
     data = get_forecasts(args)
     logging.info('Calculating precipitation sums...')
-    data = io._calc_prec_sums(data, prec_column='PrecipitationInstantTotal').fillna(-99)
+    data = io._calc_prec_sums(data, prec_column='Precipitation1h').fillna(-99)
     logging.info('Data shape: {}'.format(data.shape))
 
     files = io.df_to_serving_file(data)
 
     result = io.predict_gcloud_ml('trains_lr',
-                                  'tiny_subset_9',
+                                  'tiny_subset_10',
                                   files,
                                   data,
                                   names)
@@ -117,7 +117,7 @@ if __name__=='__main__':
                         help='Stations file name')
     parser.add_argument('--parameters_filename',
                         type=str,
-                        default='cnf/forecast_parameters.txt',
+                        default='cnf/forecast_parameters_shorten.txt',
                         help='Parameters file name')
     parser.add_argument('--dev',
                         type=int,
