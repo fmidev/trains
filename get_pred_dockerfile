@@ -38,7 +38,7 @@ RUN mkdir -p /home/www/.config/gcloud/logs && chown -R www:www /home/www
 
 USER www:www
 
-# ADD cnf/TRAINS-full.json /root/
+#ADD cnf/TRAINS-full.json /root/
 
 RUN gcloud config set proxy/type http && gcloud config set proxy/address wwwproxy.fmi.fi && gcloud config set proxy/port 8080
 RUN gcloud auth activate-service-account --key-file /a/cnf/TRAINS-full.json
