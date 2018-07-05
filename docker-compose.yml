@@ -59,7 +59,7 @@ services:
 #############
   copy_dataset:
     image: tervo/ml:cpu
-    command: python -u bin/remove_parameters.py --src_dataset ${SRC_DATASET:-trains-1.0} --dst_dataset ${DST_DATASET:-trains-1.1} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --src_parameters ${SRC_PARAMETERS:-cnf/parameters.txt} --dst_parameters ${DST_PARAMETERS:-cnf/parameters_shorten.txt} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/copy_dataset.py --src_dataset ${SRC_DATASET:-trains-1.0} --dst_dataset ${DST_DATASET:-trains-1.2} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2013-01-10} --src_parameters ${SRC_PARAMETERS:-cnf/parameters.txt} --dst_parameters ${DST_PARAMETERS:-cnf/parameters_shorten.txt} --logging_level ${LOGGING:-INFO}
     volumes:
       - ~:/root:ro
       - ~/trains:/a
@@ -71,21 +71,68 @@ services:
       - ~:/root:ro
       - ~/trains:/a
 #############
-  lr:
+  pgtobq:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/m.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-DEBUG}
+#############
+  train_scikit:
     volumes:
       - ~:/root:ro
       - ~/trains:/a
       - /tmp:/tmp
     image: tervo/ml:cpu
-    command: python -u bin/lr.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2011_14}
 #############
   lrdev:
     volumes:
       - ~:/root:ro
       - ~/trains:/a
       - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/lr.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1}
+    command: python -u bin/train.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-rf}
+#############
+  scikit_dev:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-rf}
+#############
+  vizperf:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/viz_performance.py --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --model_path ${MODEL_PATH:-models/trains_1y_dev/serving/1530189858} --stations TKL,SAV #,VS
+############
+  vizperf_scikit:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/viz_performance.py --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --model_file ${MODEL_PATH:-models/rf/trains_1y_dev/model.pkl} --stations TKL,SAV #,VS
 #############
   clean_db:
     volumes:
@@ -118,9 +165,6 @@ services:
     command: tensorboard --logdir=/tmp/lr --host 0.0.0.0
 #############
   pred:
-    volumes:
-      - ~:/root
-      - ~/trains:/a
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
     image: docker.weatherproof.fi:5000/trains-prediction:1.2

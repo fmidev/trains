@@ -12,7 +12,7 @@ import googleapiclient.discovery
 import boto3
 import random
 import pickle
-import json
+import json,csv
 import logging
 import datetime as dt
 import pandas as pd
@@ -40,6 +40,42 @@ class IO:
     #
     # GENERAL
     #
+    def write_csv(self, _dict, filename):
+        """
+        Write dict to csv
+
+        _dict : dict
+                data in format ['key': [values], 'key2': values]
+        filename : str
+                   filename where data is saved
+        """
+        with open(filename, 'w') as f:
+            f.write('"'+'";"'.join(_dict.keys())+'"\n')
+            for i in np.arange(len(_dict[list(_dict.keys())[0]])):
+                values = []
+                for col in _dict.keys():
+                    values.append(str(_dict[col][i]))
+                f.write(';'.join(values)+'\n')
+        logging.info('Wrote {}'.format(filename))
+
+    def dict_to_csv(self, dict, filename):
+        """
+        Save given dict to csv file
+        """
+        with open(filename, 'w') as f:
+            w = csv.DictWriter(f, dict.keys())
+            w.writeheader()
+            w.writerow(dict)
+        logging.info('Wrote {}'.format(filename))
+
+    def dict_to_json(self, dict, filename):
+        """
+        Save given dict to json file
+        """
+        with open(filename, 'w') as f:
+            f.write(json.dumps(dict))
+        logging.info('Wrote {}'.format(filename))
+
     def chunks(self, l, n):
         """Yield successive n-sized chunks from l."""
         for i in range(0, len(l), n):
@@ -152,6 +188,19 @@ class IO:
             names = names[drop:]
 
         return params, names
+
+    def save_scikit_model(self, model, filename):
+        """
+        Save scikit model into file
+        """
+        pickle.dump(model, open(filename, 'wb'))
+        logging.info('Saved model into {}'.format(filename))
+
+    def load_scikit_model(self, filename):
+        """
+        Load scikit model from file
+        """
+        return pickle.load(open(filename, 'rb'))
 
     def save_model(self, model_filename, weights_filename, history_filename, model, history):
         """
@@ -306,7 +355,59 @@ class IO:
     #
     # TRAINS
     #
-    def get_train_stations(self, filename=None):
+    def station_names_to_abb(self,
+                             df,
+                             locations,
+                             location_column='loc_name',
+                             stations_file='cnf/stations.json'):
+        """
+        Change long names to short ones.
+        """
+        stations = self.get_train_stations(stations_file, key='long')
+
+        def change(loc_name):
+            return stations[loc_name]['name']
+
+        df[location_column] = df.apply(lambda row: change(row[location_column]), axis=1)
+        return df
+
+
+    def station_ids_to_names(self, df, locations, location_column='loc_id',
+                             stations_file=None):
+        """
+        Change location id to station name in the given DataFrame
+
+        df                : DataFrame
+                            DataFrame to handle
+        location_column   : str
+                            name of the location column
+        stations_filename : str
+                            file where stations are stored, if None digitrafic is used
+
+        returns DataFrame
+        """
+
+        #stations = self.get_train_stations(stations_file)
+        locs_cache = {}
+        #print(stations)
+
+        def change(loc_id):
+            loc_name='unkown'
+            if loc_id in locs_cache:
+                loc_name = locs_cache[loc_id]
+            else:
+                for l in locations:
+                    if loc_id == l[0]:
+                        loc_name=l[1]
+                        locs_cache[loc_id] = loc_name
+                        break
+
+            return loc_name
+
+        df[location_column] = df.apply(lambda row: change(row[location_column]), axis=1)
+        return df
+
+    def get_train_stations(self, filename=None, key='short'):
 
         """
         Get railway stations from file or db digitrafic
@@ -322,9 +423,14 @@ class IO:
 
         stations = dict()
 
-        for s in data:
-            latlon = {'lat': s['latitude'], 'lon': s['longitude']}
-            stations[s['stationShortCode'].encode('utf-8').decode()] = latlon
+        if key == 'short':
+            for s in data:
+                latlon = {'lat': s['latitude'], 'lon': s['longitude'], 'name': s['stationName']}
+                stations[s['stationShortCode'].encode('utf-8').decode()] = latlon
+        elif key == 'long':
+            for s in data:
+                latlon = {'lat': s['latitude'], 'lon': s['longitude'], 'name': s['stationShortCode']}
+                stations[s['stationName'].encode('utf-8').decode()] = latlon
 
         return stations
 
@@ -338,9 +444,9 @@ class IO:
 
         raise KeyError('Id for name {} not found'.format(name))
 
-    def filter_labels(self, labels_metadata, labels,
-                      features_metadata, features,
-                      invert=False, uniq=False):
+    def filter_labels(self, l_data, f_data,
+                      invert=False, uniq=False,
+                      location_column='loc_name', time_column='time'):
         """
         Return labels which have corresponding features
 
@@ -359,42 +465,52 @@ class IO:
         """
 
         logging.debug('Filtering labels...')
-        if len(features_metadata) == 0 or len(features) == 0:
-            return labels_metadata, labels
+        if len(f_data) == 0 or len(l_data) == 0:
+            return l_data
 
-        l_metadata = pd.DataFrame(np.concatenate((labels_metadata, labels), axis=1))
-        f_metadata = pd.DataFrame(np.concatenate((features_metadata, features), axis=1))
-
-        l_metadata.columns = l_metadata.columns.map(lambda x: str(x) + '_label')
-
-        f_l_metadata = pd.merge(l_metadata,
-                                f_metadata.drop(columns=[2,3]), left_on=['0_label','1_label'], right_on=[0,1], how='left', left_index=True, indicator=True, copy=False)
+        l_data.columns = l_data.columns.map(lambda x: str(x) + '_label')
+        # print(l_data.loc[l_data['loc_name_label'] == 'KOK'])
+        # print(f_data.loc[f_data['loc_name'] == 'KOK'])
+        #sys.exit()
+        f_l_data = pd.merge(l_data,
+                            f_data, #.drop(columns=[2,3]),
+                            left_on=[location_column+'_label',time_column+'_label'],
+                            right_on=[location_column, time_column],
+                            how='left',
+                            #left_index=True,
+                            indicator=True,
+                            copy=False)
+        #print(f_l_data[['late_minutes_label', 'train_count_label', 'total_late_minutes_label', 'lat_label', 'lon_label', 'loc_name_label', 'time_label']])
 
         if uniq:
-            f_l_metadata.drop_duplicates(subset=['0_label', '1_label'], inplace=True)
+            f_l_data.drop_duplicates(subset=[location_column+'_label', time_column+'_label'], inplace=True)
 
         if invert:
-            f_l_metadata = f_l_metadata.loc[(f_l_metadata['_merge'] == 'left_only')]
+            f_l_data = f_l_data.loc[(f_l_data['_merge'] == 'left_only')]
         else:
-            f_l_metadata = f_l_metadata.loc[(f_l_metadata['_merge'] == 'both')]
-
-        cols = ['0_label','1_label','2_label','3_label']
-        l_metadata = f_l_metadata.loc[:,cols].as_matrix()
-        f_l_metadata.drop(columns=cols, inplace=True)
+            f_l_data = f_l_data.loc[(f_l_data['_merge'] == 'both')]
 
         filter_cols = []
-        for col in f_l_metadata:
+        rename={}
+        for col in f_l_data:
             try:
                 if col.endswith('_label'):
                     filter_cols.append(col)
+                    rename[col] = col[:-6]
             except AttributeError as e:
                 pass
 
-        l_data = f_l_metadata[filter_cols].as_matrix()
+        l_data = f_l_data[filter_cols]
+        l_data.rename(columns=rename, inplace=True)
 
-        logging.debug('Shape of filtered data | metadata: {} | {}'.format(l_data.shape, l_metadata.shape))
+        f_data = f_l_data.drop(columns=filter_cols+['_merge'])
 
-        return l_metadata, l_data
+        logging.debug('Shape of feature data: {}'.format(f_data.shape))
+        logging.debug('Shape of filtered data: {}'.format(l_data.shape))
+
+        assert len(l_data) == len(f_data)
+
+        return l_data, f_data
 
     def uniq(self, metadata, data):
         """
@@ -416,17 +532,36 @@ class IO:
         logging.debug('Shape of uniq data: {}'.format(data.shape))
         return metadata, data
 
-    def filter_train_type(self, labels_metadata=[], labels=[],
-                          labels_df=[], traintypes=[], sum_types = False,
-                          train_type_column='train type',
-                          sum_columns=['train count', 'late minutes', 'total late minutes']):
+    def get_aggs_from_params(self, params):
+        """
+        Get aggregation type from SmartMet Server param param names
+
+        params : list
+                 list of params
+
+        return dict which can be give for pandas agg function
+        """
+        aggs = {}
+        possible_aggs = ['min', 'max', 'mean', 'sum', 'median']
+        for param in params:
+            agg = param.split('(')[0]
+            if agg in possible_aggs:
+                aggs[param] = agg
+            else:
+                aggs[param] = 'mean'
+        return aggs
+
+    def filter_train_type(self, labels_df=[],
+                          train_types=[],
+                          sum_types = False,
+                          train_type_column='train_type',
+                          location_column='trainstation',
+                          time_column='time',
+                          sum_columns=['train count', 'late minutes', 'total late minutes'],
+                          aggs=[]):
         """
         Filter traintypes from metadata
 
-        labels_metadata : list like
-                          labels metadata
-        labels          : np array
-                          labels
         train_types     : list
                           list of following options: [0,1,2,3]
 
@@ -441,46 +576,30 @@ class IO:
                   labels metadata, labels
         """
 
-        if len(labels_df) > 0:
-            mask = labels_df.loc[:,train_type_column].isin(traintypes)
+        if len(labels_df) == 0:
+            return labels_df
 
-            filt_labels_df = labels_df[(mask)]
+        mask = labels_df.loc[:,train_type_column].isin(train_types)
 
-            if sum_types:
-                d = {}
-                for col in sum_columns:
-                    d[col] = ['sum']
-                d['lat'] = ['max']
-                d['lon'] = ['max']
+        filt_labels_df = labels_df[(mask)]
 
-                filt_labels_df = filt_labels_df.groupby(['location id','time'], as_index=False).agg(d)
-                filt_labels_df.columns = filt_labels_df.columns.droplevel(1)
-                filt_labels_df.drop_duplicates(['location id','time'], inplace=True)
+        if sum_types:
+            d = {}
+            for col in sum_columns:
+                d[col] = ['sum']
+            for col,method in aggs.items():
+                d[col] = [method]
+            d['lat'] = ['max']
+            d['lon'] = ['max']
 
-            return filt_labels_df
+            filt_labels_df = filt_labels_df.groupby([location_column, time_column], as_index=False).agg(d)
+            #print(filt_labels_df)
 
-        elif len(labels_metadata) > 0:
-            labels_df = pd.DataFrame(labels)
-            mask = labels_df.loc[:,3].isin(traintypes)
+            filt_labels_df.columns = filt_labels_df.columns.droplevel(1)
+            filt_labels_df.drop_duplicates([location_column, time_column], inplace=True)
+            #print(filt_labels_df)
 
-            filt_labels_df = labels_df[(mask)]
-            filt_labels_metadata = np.array(labels_metadata)[(mask)]
-
-            if sum_types:
-                meta_df = pd.DataFrame(labels_metadata).rename(columns={0:'m0', 1: 'm1', 2: 'm2', 3:'m3'})
-
-                join_df = pd.concat([meta_df, filt_labels_df], axis=1)
-                join_df = join_df.groupby(['m0','m1'], as_index=False)[0,1,2].sum()
-                meta_df.drop_duplicates(['m0','m1'], inplace=True)
-                join_df = pd.merge(join_df, meta_df, how='inner', on=['m0', 'm1'], validate='one_to_one')
-
-                filt_labels_metadata = join_df.loc[:,['m0','m1','m2','m3']].as_matrix()
-                filt_labels_df = join_df.loc[:,[0,1,2]]
-
-            return filt_labels_metadata, filt_labels_df.as_matrix()
-
-        else:
-            return labels_metadata, labels
+        return filt_labels_df
 
 
     def filter_labels_by_latlon(self, labels_metadata, latlon):
