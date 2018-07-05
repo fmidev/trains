@@ -19,6 +19,7 @@ import boto3, tempfile
 from os.path import basename
 import logging
 from datetime import datetime as dt
+import matplotlib.dates as mdates
 
 class Viz:
 
@@ -26,7 +27,7 @@ class Viz:
     bucket_name = ''
     bucket = ''
     client = ''
-    
+
     def __init__(self, s3_bucket=False):
 
         if s3_bucket != False:
@@ -54,19 +55,19 @@ class Viz:
         values.append(recall_score(y, y_pred, average='macro'))
         values.append(f1_score(y, y_pred, average='micro'))
         values.append(f1_score(y, y_pred, average='macro'))
-       
+
         logging.debug('Precision micro avg: {}'.format(values[0]))
         logging.debug('Precision macro avg: {}'.format(values[1]))
         logging.debug('Recall micro avg: {}'.format(values[2]))
         logging.debug('Recall macro avg: {}'.format(values[3]))
         logging.debug('F1 Score micro avg: {}'.format(values[4]))
         logging.debug('F1 Score macro avg: {}'.format(values[5]))
-        
+
         fig, ax1 = plt.subplots(figsize=(12,8))
 
         ind = np.arange(6)
         width = 0.35
-        
+
         rects1 = ax1.bar(ind, values, width, color='#5799c6')
 
         def autolabel(rects, ax):
@@ -78,9 +79,9 @@ class Viz:
                 ax.text(rect.get_x() + rect.get_width()/2., 1.02 * height,
                         '%.2f' % height,
                         ha='center', va='bottom')
-                
+
         autolabel(rects1, ax1)
-        
+
         ax1.set_xticks(ind + width/2)
         ax1.set_xticklabels(['Precision micro', 'Precision macro', 'Recall micro', 'Recall macro', 'F1 micro', 'F1 macro'])
 
@@ -93,7 +94,7 @@ class Viz:
 
         logging.debug("Saved method comparison chart to " + filename)
 
-            
+
     def label_hist(self, y, classes, labels=[], filename='label_hist.png'):
         logging.debug("Plotting label histogram")
 
@@ -115,7 +116,7 @@ class Viz:
                     i += 1
 
             return _max
-        
+
         fig, ax = plt.subplots(figsize=(8,5))
         bins = np.arange(len(classes) + 1)
         n, bins, rects = plt.hist(y, bins, normed=False, alpha=0.75, align='left', label=labels) #, bins=4)
@@ -124,26 +125,26 @@ class Viz:
         plt.ylim([0, _max*1.2])
         plt.xticks( classes )
         ax.grid(False)
-        plt.xlabel('Classes')        
+        plt.xlabel('Classes')
         plt.ylabel('Amount')
         plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1),  shadow=False, ncol=len(y))
-        # plt.legend()        
+        # plt.legend()
         self._save(plt, filename)
 
     def hist(self, y, label='', filename='label_hist.png'):
         logging.debug("Plotting histogram")
-        
+
         fig, ax = plt.subplots(figsize=(8,5))
         plt.hist(y, normed=False, alpha=0.75, align='left', label=label)
         # ax.grid(False)
-        plt.xlabel(label)        
+        plt.xlabel(label)
         plt.ylabel('Amount')
         plt.legend()
         self._save(plt, filename)
-        
+
     def scree_plot(self, X, filename):
         rows, cols = X.shape
-        U, S, V = np.linalg.svd(X) 
+        U, S, V = np.linalg.svd(X)
         eigvals = S**2 / np.cumsum(S)[-1]
 
         fig = plt.figure(figsize=(8,5))
@@ -153,19 +154,19 @@ class Viz:
         plt.xlabel('Principal Component')
         plt.ylabel('Eigenvalue')
 
-        leg = plt.legend(['Eigenvalues from SVD'], loc='best', borderpad=0.3, 
+        leg = plt.legend(['Eigenvalues from SVD'], loc='best', borderpad=0.3,
                          shadow=False, prop=mlp.font_manager.FontProperties(size='small'),
                          markerscale=0.4)
         leg.get_frame().set_alpha(0.4)
         leg.draggable(state=True)
-        
+
         self._save(plt, filename)
 
     def model_comp_results(self, results, filename):
         fig, ax1 = plt.subplots(figsize=(12,8))
 
         x, y1, y2 = [], [], []
-        
+
         for model,values in results.items():
             x.append(model)
             y1.append(list(values)[0])
@@ -173,7 +174,7 @@ class Viz:
 
         ind = np.arange(len(x))
         width = 0.35
-            
+
         rects1 = ax1.bar(ind, y1, width, color='#5799c6', label='Logistic loss')
 
         ax2 = ax1.twinx()
@@ -188,10 +189,10 @@ class Viz:
                 ax.text(rect.get_x() + rect.get_width()/2., 1.02 * height,
                         '%.2f' % height,
                         ha='center', va='bottom')
-                
+
         autolabel(rects1, ax1)
-        autolabel(rects2, ax2)        
-        
+        autolabel(rects2, ax2)
+
         ax1.set_xticks(ind + width/2)
         ax1.set_xticklabels(x)
 
@@ -205,20 +206,20 @@ class Viz:
         self._save(plt, filename)
 
         logging.debug("Saved method comparison chart to " + filename)
-        
+
     def cross_results(self, x, ll, acc, filename):
-        
+
         fig, ax1 = plt.subplots(figsize=(16,10))
 
-        plt.grid()        
-        
+        plt.grid()
+
         lns1 = ax1.plot(
             x,
             ll,
             c="#27ae61",
             label="Logistic loss")
         ax1.set_ylabel("Logistic Loss")
-        
+
         ax2 = ax1.twinx()
         lns2 = ax2.plot(
             x,
@@ -235,7 +236,7 @@ class Viz:
         logging.debug("Plotted cross validation results to "+ filename)
         self._save(plt, filename)
 
-            
+
     def rfc_feature_importance(self, data, filename):
         fig, ax1 = plt.subplots(figsize=(12,8))
 
@@ -243,43 +244,43 @@ class Viz:
         plt.bar(range(0,len(data)), data)
         plt.xlabel('components')
         plt.ylabel('importance')
-        
+
         self._save(plt, filename)
 
         logging.debug("Saved feature importance to "+filename)
-        
+
 
     def explained_variance(self, pca, filename):
-        
+
         fig, ax1 = plt.subplots(figsize=(16,10))
 
         plt.clf()
         plt.xticks(np.arange(0, pca.n_components_, 10))
-        plt.grid()        
+        plt.grid()
 
         plt.plot(pca.explained_variance_, linewidth=1)
-        
-        #ax2 = ax1.twinx()        
+
+        #ax2 = ax1.twinx()
         #ax2.plot(pca.explained_variance_ratio_, linewidth=1)
 
         plt.axis('tight')
         plt.xlabel('n components')
         plt.ylabel('explained variance')
         #ax2.set_ylabel('explained variance ratio')
-        
+
         self._save(plt, filename)
 
         logging.debug("Saved explained variance to "+filename)
-    
+
 
 
     def plot_learning(self, cost_train_vec, cost_test_vec, filename):
-        
+
         fig, ax1 = plt.subplots(figsize=(16,10))
 
         plt.clf()
-        plt.grid()        
-        
+        plt.grid()
+
         #ax1 = fig.add_subplot(gs00[1, 0])  #, adjustable='box-forced'
         plt.plot(
             np.arange(cost_train_vec.shape[0]),
@@ -322,13 +323,13 @@ class Viz:
             logging.debug('Confusion matrix, without normalization')
 
         logging.debug(cm)
-            
+
         plt.imshow(cm, interpolation='nearest', cmap=cmap)
         tick_marks = np.arange(len(classes))
         ax.xaxis.tick_top()
         plt.xticks(tick_marks, classes) #, rotation=45)
         plt.yticks(tick_marks, classes)
-        
+
         fmt = '.2f' if normalize else 'd'
         thresh = cm.max() / 2.
         for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
@@ -343,10 +344,10 @@ class Viz:
 
 
     def plot_roc(self, y, y_pred, n_classes=4, filename='roc.png'):
-        """ 
+        """
         Plot ROC
         """
-        fig, ax1 = plt.subplots(figsize=(12,12))        
+        fig, ax1 = plt.subplots(figsize=(12,12))
         plt.clf()
 
         y = label_binarize(y, classes=np.arange(n_classes))
@@ -356,7 +357,7 @@ class Viz:
         tpr = dict()
         roc_auc = dict()
 
-        for i in range(n_classes):            
+        for i in range(n_classes):
             fpr[i], tpr[i], threshhold = roc_curve(y[:, i], y_pred[:,i])
             roc_auc[i] = auc(fpr[i], tpr[i])
             logging.debug('AUC for class {} is {}'.format(i, roc_auc[i]))
@@ -377,7 +378,7 @@ class Viz:
         fpr["macro"] = all_fpr
         tpr["macro"] = mean_tpr
         roc_auc["macro"] = auc(fpr["macro"], tpr["macro"])
-    
+
         plt.plot([0, 1], [0, 1], 'k--')
         for i in range(n_classes):
             plt.plot(fpr[i], tpr[i], label="Class {0} (AUC: {1:0.2f})".format(i, roc_auc[i]))
@@ -385,16 +386,16 @@ class Viz:
         plt.plot(fpr["macro"], tpr["macro"],
                  label='Average (AUC: {0:0.2f})'
                  ''.format(roc_auc["macro"]),
-                 color='navy', linestyle=':', linewidth=4)    
+                 color='navy', linestyle=':', linewidth=4)
         plt.xlabel('False positive rate')
         plt.ylabel('True positive rate')
         plt.title('ROC curve')
         plt.legend(loc="lower right")
         self._save(plt, filename)
-        
+
         logging.debug("Saved feature importance to "+filename)
 
-        
+
     ################################################################################
 
 
@@ -404,15 +405,15 @@ class Viz:
         plt.plot(model_sizes, train_errors, linewidth=1.0, label='training accuray')
         plt.ylabel('accuracy')
         plt.xlabel('model size (r**2, r)')
-        plt.axhline(0, color='black', linewidth=0.5)    
-        plt.legend(frameon=False)        
+        plt.axhline(0, color='black', linewidth=0.5)
+        plt.legend(frameon=False)
         self._save(plt, filename)
 
-        
+
     def plot_activation(self, nactivation1, nactivation2, filename):
 
         na1, na2 = [], []
-        
+
         for r in nactivation1.T:
             na1.append(r.mean())
 
@@ -420,7 +421,7 @@ class Viz:
             na2.append(r.mean())
 
         fig, ax1 = plt.subplots(figsize=(16,10))
-        
+
         plt.subplot(211)
         ind = np.arange(len(na1))
         rects1 = plt.bar(ind, na1, color='y')
@@ -440,7 +441,7 @@ class Viz:
                      filename='nn_perf.png'):
 
         fig, ax1 = plt.subplots(figsize=(12,8))
-        
+
         # Get training and test accuracy histories
 
         #training_accuracy = history.history['acc']
@@ -448,13 +449,13 @@ class Viz:
 
         #training_loss = history.history['loss']
         #test_loss = history.history['val_loss']
-        
+
         # Create count of the number of epochs
         dashes = ['--', '-', '.', '-o-']
         lns = []
-        axes = {'Loss': ax1}    
+        axes = {'Loss': ax1}
         axes['Loss'].set_ylabel('Loss')
-        epoch_count = range(1, len(history['loss']) + 1)        
+        epoch_count = range(1, len(history['loss']) + 1)
         lns += axes['Loss'].plot(epoch_count, history['loss'], color='b', linestyle=dashes[0], label='Training loss')
         lns += axes['Loss'].plot(epoch_count, history['val_loss'], color='g', linestyle=dashes[0], label='Validation loss')
 
@@ -472,8 +473,8 @@ class Viz:
                 count += 2
             i+=1
 
-                
-        
+
+
         #ax2 = ax1.twinx()
         #lns3 = ax2.plot(epoch_count, training_loss, 'y-', label='Training loss')
         #lns4 = ax2.plot(epoch_count, test_loss, 'g-', label='Validation loss')
@@ -484,7 +485,7 @@ class Viz:
                    ncol=count, frameon=False, shadow=True)
 
         # ax1.legend(lns, labs, loc=0, frameon=False)
-        plt.xlabel('Epoch')        
+        plt.xlabel('Epoch')
 
         self._save(plt, filename)
 
@@ -500,8 +501,8 @@ class Viz:
                 plot_model(model, to_file=filename, show_shapes=True)
         except:
             logging.debug("...FAILED")
-            
-        
+
+
     def plot_feature_map(self, model, layer_id, activation_id, X, filename, n=256, ax=None, **kwargs):
         """
         """
@@ -510,7 +511,7 @@ class Viz:
         from mpl_toolkits.axes_grid1 import make_axes_locatable
 
         # fig, ax = plt.subplots(figsize=(16,16))
-        
+
         layer = model.layers[layer_id]
         activation_layer = model.layers[activation_id]
         logging.debug(layer.name)
@@ -520,27 +521,27 @@ class Viz:
         get_activations = K.function([model.layers[0].input, K.learning_phase()], [activation_layer.output,])
         output = get_output([X, 0])[0]
         activations = get_activations([X, 0])[0]
-        
+
         # Set default matplotlib parameters
         if not 'interpolation' in kwargs.keys():
             kwargs['interpolation'] = "none"
 
         if not 'cmap' in kwargs.keys():
             kwargs['cmap'] = "gray"
-        
+
         fig = plt.figure(figsize=(20, 20))
-    
+
         # Compute nrows and ncols for images
         n_mosaic = activations.shape[1]
         nrows = int(np.round(np.sqrt(n_mosaic)))
         ncols = int(nrows)
         if (nrows ** 2) < n_mosaic:
             ncols +=1
-        
+
         # Compute nrows and ncols for mosaics
         if activations[0].shape[0] < n:
             n = activations[0].shape[0]
-    
+
         nrows_inside_mosaic = int(np.round(np.sqrt(n)))
         ncols_inside_mosaic = int(nrows_inside_mosaic)
 
@@ -548,12 +549,12 @@ class Viz:
             ncols_inside_mosaic += 1
 
 
-        for i, feature_map in enumerate(np.transpose(output)):        
+        for i, feature_map in enumerate(np.transpose(output)):
             ax = fig.add_subplot(ncols, nrows, i+1)
             mosaic = ax.hist(feature_map)
-        
+
             ax.set_title("Historgram #{} \nof layer#{} \ncalled '{}' \nof type {} ".format(i, layer_id,layer.name, layer.__class__.__name__))
-                    
+
         fig.tight_layout()
         self._save(fig, filename)
         return fig
@@ -568,7 +569,7 @@ class Viz:
             try:
                 logging.debug("Plotting feature map for layer {} with activation {}".format(layer, activation))
                 filename=path+'/feature_map_'+str(i)+'.png'
-                fig = self.plot_feature_map(model, layer, activation, X, filename=filename, n=n, ax=ax, **kwargs)            
+                fig = self.plot_feature_map(model, layer, activation, X, filename=filename, n=n, ax=ax, **kwargs)
                 i += 1
             except:
                 logging.debug("...FAILED")
@@ -594,13 +595,13 @@ class Viz:
     def hist_all_delays(self, df, filename):
         """
         """
-        
+
         axs = df.hist(alpha=0.5, range=(0,10), bins=11, density=True, align='left')
 
         for row in axs:
             for ax in row:
                 ax.set_xticks(np.arange(11))
-                
+
         fig = axs[0][0].get_figure()
         self._save(fig, filename)
 
@@ -609,21 +610,21 @@ class Viz:
         """
         plt.clf()
         axs = df.plot(alpha=0.5, subplots=True, figsize=(60,80))
-        
+
 #        import matplotlib.dates as mdates
-        
+
 #        years = mdates.YearLocator()   # every year
 #        months = mdates.MonthLocator()  # every month
         # days = mdates.DayLocator()
 
 #        axs[0].xaxis.set_major_locator(years)
 #        axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
-        
+
 #        axs[0].xaxis.set_minor_locator(ticker.FixedLocator(minors))
 #        axs[0].xaxis.set_minor_formatter(mdates.DateFormatter('%H'))
         #axs[0].xaxis.set_minor_locator(days)
 #        print(axs[0].get_xticklabels())
-             
+
         #axs[0].xaxis.set_major_locator(MaxNLocator(nbins=20, prune='upper'))
 
         fig = axs[0].get_figure()
@@ -636,16 +637,16 @@ class Viz:
 
         params = {'legend.fontsize': 50}
         plt.rcParams.update(params)
-        
+
         plt.ylabel('Delay [minutes]', fontsize=50)
 
         self._save(fig, filename)
-        
+
     def heatmap_train_station_delays(self, df, locs, filename, label='Day of year'):
         """
         """
         plt.clf()
-        
+
         ratio = df.shape[0]/df.shape[1]
         width = 120
         height = int(width*ratio)
@@ -653,7 +654,7 @@ class Viz:
 
         fontsize = 50
         if height < 60: fontsize = 25
-            
+
         fig, ax = plt.subplots(figsize=(width,height))
         cax = ax.matshow(df, interpolation=None, aspect='auto')
 
@@ -664,7 +665,7 @@ class Viz:
         loc = ticker.MultipleLocator(base=1.0)
         ax.xaxis.set_major_locator(loc)
         ax.set_xticklabels(['']+labels)
-        
+
         ax.tick_params(axis = 'x', which = 'major', labelsize = 16)
         ax.tick_params(axis = 'y', which = 'major', labelsize = fontsize)
         ax.tick_params(axis='x', rotation=90)
@@ -672,17 +673,54 @@ class Viz:
         cbar = fig.colorbar(cax)
         for font_objects in cbar.ax.yaxis.get_ticklabels():
             font_objects.set_size(fontsize)
-        
+
         plt.ylabel(label, fontsize=fontsize)
         plt.xlabel('Station', fontsize=fontsize)
 
         plt.subplots_adjust(left=0.1)
-        
+
         logging.info('Saving file {}...'.format(filename))
         plt.savefig(filename)
         plt.close()
 
+    def plot_delay(self, times, delay=None, pred_delay=None, heading='Delay', filename='delay.png'):
+
+        fig, ax = plt.subplots(figsize=(16,10))
+
+        years = mdates.YearLocator()   # every year
+        months = mdates.MonthLocator()  # every month
+        days = mdates.DayLocator()
+        hours = mdates.HourLocator()
+        yearsFmt = mdates.DateFormatter('%m')
 
 
-        
+        plt.clf()
+        plt.grid()
 
+        #ax1 = fig.add_subplot(gs00[1, 0])  #, adjustable='box-forced'
+        if delay is not None:
+            plt.plot(times,
+                     delay,
+                     c="#27ae61",
+                     label="True delay")
+
+        if pred_delay is not None:
+            plt.plot(times,
+                     pred_delay,
+                     c="#c1392b",
+                     label="Predicted delay")
+
+        plt.xlabel("Time")
+        plt.ylabel("Delay [minutes]")
+        plt.title(heading)
+
+        ax.xaxis.set_major_locator(months)
+        ax.xaxis.set_major_formatter(yearsFmt)
+        ax.xaxis.set_minor_locator(days)
+
+        ax.format_xdata = mdates.DateFormatter('%Y %m %d')
+        ax.grid(True)
+        fig.autofmt_xdate()
+
+        plt.legend()
+        self._save(plt, filename)

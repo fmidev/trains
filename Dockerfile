@@ -22,7 +22,7 @@ RUN apt-get install -y curl
 
 # RUN apt-get install -y wget graphviz libtiff5-dev libjpeg8-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev tcl8.6-dev tk8.6-dev
 
-RUN pip install --upgrade requests pandas tensorflow google-api-python-client google-cloud sklearn scipy keras boto3  google-api-python-client google-auth-httplib2
+RUN pip install --upgrade requests pandas tensorflow google-api-python-client google-cloud sklearn scipy keras boto3  google-api-python-client google-auth-httplib2 
 
 # mlfdb
 RUN mkdir /tmp/a && git clone https://github.com/fmidev/ml_feature_db.git /tmp/a && pip install /tmp/a/api && rm -rf /tmp/a
