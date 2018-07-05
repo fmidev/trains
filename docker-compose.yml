@@ -87,8 +87,10 @@ services:
       - ~:/root:ro
       - ~/trains:/a
       - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2011_14} --day_step 2190
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2011_14} --day_step 2190d
 #############
   lrdev:
     volumes:
