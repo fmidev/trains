@@ -724,3 +724,58 @@ class Viz:
 
         plt.legend()
         self._save(plt, filename)
+
+    def plot_learning_over_time(self, times, rmse=None, mae=None,
+                                r2=None, heading='Error', filename='error.png'):
+
+        fig, ax = plt.subplots(figsize=(16,10))
+
+        years = mdates.YearLocator()   # every year
+        months = mdates.MonthLocator()  # every month
+        days = mdates.DayLocator()
+        hours = mdates.HourLocator()
+        yearsFmt = mdates.DateFormatter('%m')
+
+        plt.clf()
+        plt.grid()
+
+        #ax1 = fig.add_subplot(gs00[1, 0])  #, adjustable='box-forced'
+        if rmse is not None:
+            ax.plot(times,
+                     rmse,
+                     c="#27ae61",
+                     label="RMSE")
+
+        if mae is not None:
+            ax.plot(times,
+                     mae,
+                     c="#c1392b",
+                     label="MAE")
+
+        if r2 is not None and False:
+            ax2 = ax.twinx()
+            ax2.set_ylabel("R2 Score")
+            ax2.plot(times,
+                     r2,
+                     c="#223999",
+                     label="R2 score")
+        plt.xlabel("Time")
+        ax.set_ylabel("Error")
+        plt.title(heading)
+
+        ax.xaxis.set_major_locator(months)
+        ax.xaxis.set_major_formatter(yearsFmt)
+        ax.xaxis.set_minor_locator(days)
+        # ax2.xaxis.set_major_locator(months)
+        # ax2.xaxis.set_major_formatter(yearsFmt)
+        # ax2.xaxis.set_minor_locator(days)
+
+        ax.format_xdata = mdates.DateFormatter('%Y %m %d')
+        ax.grid(True)
+        # ax2.format_xdata = mdates.DateFormatter('%Y %m %d')
+        # ax2.grid(True)
+
+        fig.autofmt_xdate()
+
+        plt.legend()
+        self._save(plt, filename)
