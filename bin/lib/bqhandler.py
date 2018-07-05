@@ -89,7 +89,7 @@ class BQHandler(object):
 
         if locations is not None:
             sql += ' AND {loc_col} in ({locations})'.format(loc_col=loc_col,
-                                                            locations='"'+'","'.join(locations)+'"')                   
+                                                            locations='"'+'","'.join(locations)+'"')
         logging.debug(sql)
         return self._query(sql)
 
@@ -133,5 +133,4 @@ class BQHandler(object):
         """
         self._connect()
         result = self.client.query(sql).result()
-        print(result)
         return result.to_dataframe()

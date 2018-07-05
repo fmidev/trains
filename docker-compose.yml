@@ -82,13 +82,13 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/m.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-DEBUG}
 #############
-  train_scikit:
+  rfr:
     volumes:
       - ~:/root:ro
       - ~/trains:/a
       - /tmp:/tmp
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2011_14}
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2011_14} --day_step 2190
 #############
   lrdev:
     volumes:
@@ -108,9 +108,9 @@ services:
       - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    #  - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-rf}
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-rf} --day_step ${DAY_STEP:-30}
 #############
   vizperf:
     volumes:

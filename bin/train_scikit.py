@@ -58,7 +58,9 @@ def main():
 
     # steps=options.n_loops
     if options.model == 'rf':
-        model = RandomForestRegressor(n_estimators=200, n_jobs=-1)
+        model = RandomForestRegressor(n_estimators=200, warm_start=True, n_jobs=-1)
+
+    rmses, maes, r2s, start_times, end_times = [], [], [], [], []
 
     start = starttime
     end = start + timedelta(days=options.day_step, hours=options.hour_step)
@@ -76,6 +78,9 @@ def main():
                                dataset=options.feature_dataset,
                                table=options.feature_table,
                                parameters=all_param_names)
+
+            # Manually remove data which is used for testing performance.
+            data = data.loc[(data['time'] < '2010-02-01') | (data['time'] > '2010-03-01')]
 
             data = io.filter_train_type(labels_df=data,
                                         train_types=['K','L'],
@@ -130,6 +135,12 @@ def main():
         mae = mean_absolute_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
 
+        rmses.append(rmse)
+        maes.append(mae)
+        r2s.append(r2)
+        start_times.append(start.strftime('%Y-%m-%dT%H:%M:%S'))
+        end_times.append(end.strftime('%Y-%m-%dT%H:%M:%S'))
+
         if options.model == 'rf':
             logging.info('R2 score for training: {}'.format(model.score(X_train, y_train)))
 
@@ -139,9 +150,19 @@ def main():
 
         start = end
         end = start + timedelta(days=options.day_step, hours=options.hour_step)
+        if end > endtime: end = endtime
 
     io.save_scikit_model(model, options.save_file)
+    if options.model == 'rf':
+        viz.rfc_feature_importance(model.feature_importances_, options.output_path+'/rfc_feature_importance.png')
 
+    viz.plot_learning_over_time(end_times, rmses, maes, r2s, filename=options.output_path+'/learning_over_time.png')
+    error_data = {'start_times': start_times,
+                  'end_times': end_times,
+                  'rmse': rmses,
+                  'mae': maes,
+                  'r2': r2s}
+    io.write_csv(error_data, '{}/errors.csv'.format(options.output_path))
 
 if __name__=='__main__':
 
