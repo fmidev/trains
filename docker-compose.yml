@@ -92,6 +92,17 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2011_14} --day_step 2190 --gs_bucket trains-data
 #############
+  lr:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2015-12-31} --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_2011_14} --model ${MODEL:-lr} --day_step ${DAY_STEP:-90}
+#############
   lrdev:
     volumes:
       - ~:/root:ro
@@ -101,7 +112,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/train.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-rf}
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-lr} --day_step ${DAY_STEP:-1}
 #############
   scikit_dev:
     volumes:
@@ -134,7 +145,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/viz_performance.py --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --model_file ${MODEL_PATH:-models/rf/trains_1y_dev/model.pkl} --stations TKL,SAV #,VS
+    command: python -u bin/viz_performance.py --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --model_file ${MODEL_FILE:-models/rf/trains_1y_dev/model.pkl} --stations TKL,SAV #,VS
 #############
   clean_db:
     volumes:
@@ -169,6 +180,7 @@ services:
   pred:
     volumes:
       - ~/trains:/a
+      - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
     image: docker.weatherproof.fi:5000/trains-prediction:1.2
