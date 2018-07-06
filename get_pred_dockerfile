@@ -33,6 +33,7 @@ RUN echo "deb http://packages.cloud.google.com/apt cloud-sdk-jessie main" | tee 
 
 ADD bin /a/bin
 ADD cnf /a/cnf
+ADD model /a/model
 
 RUN mkdir -p /home/www/.config/gcloud/logs && chown -R www:www /home/www
 
@@ -45,4 +46,4 @@ RUN gcloud auth activate-service-account --key-file /a/cnf/TRAINS-full.json
 RUN gcloud config set project trains-197305
 
 
-CMD python -u bin/get_prediction.py --logging_level INFO
+CMD python -u bin/get_prediction_scikit.py --logging_level INFO --model_file /a/model/model.pkl
