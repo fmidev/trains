@@ -170,8 +170,8 @@ def main():
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--starttime', type=str, default='2010-02-01', help='Start time of the classification data interval')
-    parser.add_argument('--endtime', type=str, default='2010-03-01', help='End time of the classification data interval')
+    parser.add_argument('--starttime', type=str, default='2011-02-01', help='Start time of the classification data interval')
+    parser.add_argument('--endtime', type=str, default='2011-03-01', help='End time of the classification data interval')
     parser.add_argument('--save_path', type=str, default=None, help='Output path')
     parser.add_argument('--model_path', type=str, default=None, help='Path of TensorFlow Estimator file')
     parser.add_argument('--model_file', type=str, default=None, help='Path and filename of SciKit model file. If this is given, model_path is ignored.')

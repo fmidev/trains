@@ -167,7 +167,9 @@ services:
     command: tensorboard --logdir=/tmp/lr --host 0.0.0.0
 #############
   pred:
+    volumes:
+      - ~/trains:/a
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
     image: docker.weatherproof.fi:5000/trains-prediction:1.2
-    command: python -u bin/get_prediction.py --logging_level ${LOGGING:-INFO} --dev ${DEV:-1}
+    command: python -u bin/get_prediction_scikit.py --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --model_file ${MODEL_FILE:-models/rf/trains_1y_dev/model.pkl}
