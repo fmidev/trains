@@ -41,14 +41,23 @@ class IO:
             self.gs = True
 
     def _upload_to_bucket(self, filename, ext_filename):
+        """
+        Upload file to bucket if bucket is set and ext_filename is not None
+        """
+        if ext_filename is None:
+            return
+
         if self.s3:
             raise ValueError('S3 not implemented')
         if self.gs:
-            client = storage.Client()
-            bucket = client.get_bucket(self.bucket_name)
-            blob = storage.Blob(ext_filename, bucket)
-            blob.upload_from_filename(filename)
-            logging.info('Uploaded to {}'.format(ext_filename))
+            try:
+                client = storage.Client()
+                bucket = client.get_bucket(self.bucket_name)
+                blob = storage.Blob(ext_filename, bucket)
+                blob.upload_from_filename(filename)
+                logging.info('Uploaded to {}'.format(ext_filename))
+            except:
+                logging.warning('Uploading file to bucket failed')
 
     #
     # GENERAL
@@ -72,7 +81,7 @@ class IO:
         logging.info('Wrote {}'.format(filename))
         self._upload_to_bucket(filename, ext_filename)
 
-    def dict_to_csv(self, dict, filename):
+    def dict_to_csv(self, dict, filename, ext_filename=None):
         """
         Save given dict to csv file
         """
@@ -211,7 +220,7 @@ class IO:
         """
         Save scikit model into file
         """
-        joblib.dump(model, filename)
+        joblib.dump(model, filename, compress=9)
         logging.info('Saved model into {}'.format(filename))
         self._upload_to_bucket(filename, ext_filename)
 

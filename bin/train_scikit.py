@@ -58,7 +58,7 @@ def main():
 
     # steps=options.n_loops
     if options.model == 'rf':
-        model = RandomForestRegressor(n_estimators=100, warm_start=True, n_jobs=-1)
+        model = RandomForestRegressor(n_estimators=50, warm_start=True, n_jobs=-1)
 
     rmses, maes, r2s, start_times, end_times, end_times_obj = [], [], [], [], [], []
 
@@ -81,7 +81,7 @@ def main():
                                parameters=all_param_names)
 
             # Manually remove data which is used for testing performance.
-            data = data.loc[(data['time'] < '2010-02-01') | (data['time'] > '2010-03-01')]
+            data = data.loc[(data['time'] < '2011-02-01') | (data['time'] > '2011-03-01')]
 
             data = io.filter_train_type(labels_df=data,
                                         train_types=['K','L'],
