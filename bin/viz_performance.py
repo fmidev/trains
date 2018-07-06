@@ -152,7 +152,7 @@ def main():
     for t,l in avg_delay.items():
         avg_delay[t] = sum(l)/len(l)
     for t, l in avg_pred_delay.items():
-        avg_pred_delay[t] = sum(l)/len(l)        
+        avg_pred_delay[t] = sum(l)/len(l)
     avg_delay = list(OrderedDict(sorted(avg_delay.items(), key=lambda t: t[0])).values())
     avg_pred_delay = list(OrderedDict(sorted(avg_pred_delay.items(), key=lambda t: t[0])).values())
 
@@ -176,6 +176,8 @@ if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--starttime', type=str, default='2011-02-01', help='Start time of the classification data interval')
     parser.add_argument('--endtime', type=str, default='2011-03-01', help='End time of the classification data interval')
+    # parser.add_argument('--starttime', type=str, default='2013-06-01', help='Start time of the classification data interval')
+    # parser.add_argument('--endtime', type=str, default='2013-07-01', help='End time of the classification data interval')
     parser.add_argument('--save_path', type=str, default=None, help='Output path')
     parser.add_argument('--model_path', type=str, default=None, help='Path of TensorFlow Estimator file')
     parser.add_argument('--model_file', type=str, default=None, help='Path and filename of SciKit model file. If this is given, model_path is ignored.')
