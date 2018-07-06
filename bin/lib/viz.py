@@ -726,56 +726,52 @@ class Viz:
         self._save(plt, filename)
 
     def plot_learning_over_time(self, times, rmse=None, mae=None,
-                                r2=None, heading='Error', filename='error.png'):
+                                r2=None, heading='Model error development over time', filename='error.png'):
 
-        fig, ax = plt.subplots(figsize=(16,10))
+        fig, ax1 = plt.subplots(figsize=(16,10))
 
-        years = mdates.YearLocator()   # every year
-        months = mdates.MonthLocator()  # every month
+        years = mdates.YearLocator()
+        months = mdates.MonthLocator()
         days = mdates.DayLocator()
         hours = mdates.HourLocator()
-        yearsFmt = mdates.DateFormatter('%m')
+        yearsFmt = mdates.DateFormatter('%d/%m %Y')
 
-        plt.clf()
-        plt.grid()
-
-        #ax1 = fig.add_subplot(gs00[1, 0])  #, adjustable='box-forced'
+        lns = []
         if rmse is not None:
-            ax.plot(times,
-                     rmse,
-                     c="#27ae61",
-                     label="RMSE")
+            lns += plt.plot(times,
+                            rmse,
+                            c="#27ae61",
+                            label="RMSE")
 
         if mae is not None:
-            ax.plot(times,
-                     mae,
-                     c="#c1392b",
-                     label="MAE")
+            lns += plt.plot(times,
+                            mae,
+                            c="#c1392b",
+                            label="MAE")
 
-        if r2 is not None and False:
-            ax2 = ax.twinx()
-            ax2.set_ylabel("R2 Score")
-            ax2.plot(times,
-                     r2,
-                     c="#223999",
-                     label="R2 score")
-        plt.xlabel("Time")
-        ax.set_ylabel("Error")
+        plt.xlabel('Date of delay data')
+        plt.ylabel('Error')
+
+        if r2 is not None:
+            plt.twinx()
+            plt.ylabel(r'$R^2$ Score')
+            lns += plt.plot(times,
+                            r2,
+                            c="#223999",
+                            label=r'$R^2$ Score')
+
         plt.title(heading)
 
-        ax.xaxis.set_major_locator(months)
-        ax.xaxis.set_major_formatter(yearsFmt)
-        ax.xaxis.set_minor_locator(days)
-        # ax2.xaxis.set_major_locator(months)
-        # ax2.xaxis.set_major_formatter(yearsFmt)
-        # ax2.xaxis.set_minor_locator(days)
+        ax1.xaxis.set_major_locator(months)
+        ax1.xaxis.set_major_formatter(yearsFmt)
+        ax1.xaxis.set_minor_locator(days)
 
-        ax.format_xdata = mdates.DateFormatter('%Y %m %d')
-        ax.grid(True)
-        # ax2.format_xdata = mdates.DateFormatter('%Y %m %d')
-        # ax2.grid(True)
+        plt.format_xdata = mdates.DateFormatter('%Y %m %d')
+        plt.grid(True)
 
         fig.autofmt_xdate()
 
-        plt.legend()
+        labs = [l.get_label() for l in lns]
+        plt.legend(lns, labs, frameon=True)
+        #plt.legend()
         self._save(plt, filename)

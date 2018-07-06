@@ -25,7 +25,7 @@ def main():
     """
 
     bq = _bq.BQHandler()
-    io = _io.IO()
+    io = _io.IO(gs_bucket=options.gs_bucket)
     viz = _viz.Viz()
 
     if not os.path.exists(options.save_path):
@@ -58,9 +58,9 @@ def main():
 
     # steps=options.n_loops
     if options.model == 'rf':
-        model = RandomForestRegressor(n_estimators=200, warm_start=True, n_jobs=-1)
+        model = RandomForestRegressor(n_estimators=100, warm_start=True, n_jobs=-1)
 
-    rmses, maes, r2s, start_times, end_times = [], [], [], [], []
+    rmses, maes, r2s, start_times, end_times, end_times_obj = [], [], [], [], [], []
 
     start = starttime
     end = start + timedelta(days=options.day_step, hours=options.hour_step)
@@ -71,6 +71,7 @@ def main():
                                                             end.strftime('%Y-%m-%d %H:%M')))
 
         try:
+            logging.info('Reading data...')
             data = bq.get_rows(start,
                                end,
                                loc_col='trainstation',
@@ -119,8 +120,6 @@ def main():
 
         X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
 
-        # print(X_train[0:10])
-        # print(y_train[0:10])
         n_samples, n_dims = X_train.shape
 
         # indices = np.random.choice(n_samples, options.batch_size)
@@ -140,6 +139,7 @@ def main():
         r2s.append(r2)
         start_times.append(start.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times.append(end.strftime('%Y-%m-%dT%H:%M:%S'))
+        end_times_obj.append(end)
 
         if options.model == 'rf':
             logging.info('R2 score for training: {}'.format(model.score(X_train, y_train)))
@@ -152,47 +152,55 @@ def main():
         end = start + timedelta(days=options.day_step, hours=options.hour_step)
         if end > endtime: end = endtime
 
-    io.save_scikit_model(model, options.save_file)
+    io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
     if options.model == 'rf':
-        viz.rfc_feature_importance(model.feature_importances_, options.output_path+'/rfc_feature_importance.png')
+        fname = options.output_path+'/rfc_feature_importance.png'
+        viz.rfc_feature_importance(model.feature_importances_, fname)
+        io._upload_to_bucket(filename=fname, ext_filename=fname)
 
-    viz.plot_learning_over_time(end_times, rmses, maes, r2s, filename=options.output_path+'/learning_over_time.png')
+    fname = options.output_path+'/learning_over_time.png'
+    viz.plot_learning_over_time(end_times_obj, rmses, maes, r2s, filename=fname)
+    io._upload_to_bucket(filename=fname, ext_filename=fname)
+
     error_data = {'start_times': start_times,
                   'end_times': end_times,
                   'rmse': rmses,
                   'mae': maes,
                   'r2': r2s}
-    io.write_csv(error_data, '{}/errors.csv'.format(options.output_path))
+    fname = '{}/errors.csv'.format(options.output_path)
+    io.write_csv(error_data, filename=fname, ext_filename=fname)
 
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--starttime', type=str, help='Start time of the classification data interval')
     parser.add_argument('--endtime', type=str, help='End time of the classification data interval')
+
+    parser.add_argument('--output_path', type=str, default=None, help='Path where visualizations are saved')
+    parser.add_argument('--gs_bucket', type=str, default=None, help='Google Cloud bucket name to upload results')
     parser.add_argument('--save_path', type=str, default=None, help='Model save path and filename')
     parser.add_argument('--model', type=str, default='rf', help='Model save path and filename')
+
     parser.add_argument('--project', type=str, default='trains-197305', help='BigQuery project name')
     parser.add_argument('--feature_dataset', type=str, default='trains_all_features', help='Dataset name for features')
     parser.add_argument('--label_dataset', type=str, default='trains_labels', help='Dataset name for labels')
     parser.add_argument('--feature_table', type=str, default='features', help='Table name for features')
     parser.add_argument('--label_table', type=str, default='labels_passenger', help='Table name for labels')
+    parser.add_argument('--parameters_file', type=str, default='cnf/parameters_shorten.txt', help='Param conf filename')
+
     parser.add_argument('--batch_size', type=int, default=100, help='Batch size for training')
+
     parser.add_argument('--day_step', type=int, default=30, help='How many days are handled in one step')
     parser.add_argument('--hour_step', type=int, default=0, help='How many hours are handled in one step')
 
     #parser.add_argument('--stations_file', type=str, default=None, help='Stations file to rename stations from loc_id to station name')
-    parser.add_argument('--parameters_file', type=str, default='cnf/parameters_shorten.txt', help='Param conf filename')
     parser.add_argument('--log_dir', type=str, default=None, help='Tensorboard log dir')
     parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
-    parser.add_argument('--db_config_file',
-                        type=str,
-                        default=None,
-                        help='GS address for db config file (if none, ~/.mlfdbconfig is used)')
+
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',
                         help='options: DEBUG,INFO,WARNING,ERROR,CRITICAL')
-    parser.add_argument('--output_path', type=str, default=None, help='Path where visualizations are saved')
 
     options = parser.parse_args()
 

@@ -3,6 +3,9 @@ import sys, re, tempfile, subprocess
 import numpy as np
 from os import listdir
 from os.path import isfile, join
+
+from google.cloud import storage
+
 from sklearn.externals import joblib
 from keras.models import Model, model_from_yaml
 import tensorflow as tf
@@ -37,10 +40,20 @@ class IO:
             self.bucket_name = gs_bucket
             self.gs = True
 
+    def _upload_to_bucket(self, filename, ext_filename):
+        if self.s3:
+            raise ValueError('S3 not implemented')
+        if self.gs:
+            client = storage.Client()
+            bucket = client.get_bucket(self.bucket_name)
+            blob = storage.Blob(ext_filename, bucket)
+            blob.upload_from_filename(filename)
+            logging.info('Uploaded to {}'.format(ext_filename))
+
     #
     # GENERAL
     #
-    def write_csv(self, _dict, filename):
+    def write_csv(self, _dict, filename, ext_filename=None):
         """
         Write dict to csv
 
@@ -57,6 +70,7 @@ class IO:
                     values.append(str(_dict[col][i]))
                 f.write(';'.join(values)+'\n')
         logging.info('Wrote {}'.format(filename))
+        self._upload_to_bucket(filename, ext_filename)
 
     def dict_to_csv(self, dict, filename):
         """
@@ -67,6 +81,8 @@ class IO:
             w.writeheader()
             w.writerow(dict)
         logging.info('Wrote {}'.format(filename))
+        self._upload_to_bucket(filename, ext_filename)
+
 
     def dict_to_json(self, dict, filename):
         """
@@ -75,6 +91,8 @@ class IO:
         with open(filename, 'w') as f:
             f.write(json.dumps(dict))
         logging.info('Wrote {}'.format(filename))
+        self._upload_to_bucket(filename, ext_filename)
+
 
     def chunks(self, l, n):
         """Yield successive n-sized chunks from l."""
@@ -189,18 +207,31 @@ class IO:
 
         return params, names
 
-    def save_scikit_model(self, model, filename):
+    def save_scikit_model(self, model, filename, ext_filename=None):
         """
         Save scikit model into file
         """
-        pickle.dump(model, open(filename, 'wb'))
+        joblib.dump(model, filename)
         logging.info('Saved model into {}'.format(filename))
+        self._upload_to_bucket(filename, ext_filename)
 
     def load_scikit_model(self, filename):
         """
         Load scikit model from file
         """
-        return pickle.load(open(filename, 'rb'))
+
+        if self.s3 and not force_local:
+            raise ValueError('S3 not implemented')
+        if self.gs and not force_local:
+            client = storage.Client()
+            bucket = client.get_bucket(self.bucket_name)
+            tmp = tempfile.NamedTemporaryFile()
+            blob = storage.Blob(filename, bucket)
+            blob.download_to_filename(str(tmp))
+        else:
+            tmp = filename
+
+        return joblib.load(str(tmp))
 
     def save_model(self, model_filename, weights_filename, history_filename, model, history):
         """
@@ -261,15 +292,6 @@ class IO:
             export_dir_base=export_dir,
             serving_input_receiver_fn=serving_input_fn
         )
-
-
-        # tf.saved_model.simple_save(
-        #     sess,
-        #     export_dir,
-        #     inputs,
-        #     outputs,
-        #     legacy_init_op=None
-        # )
 
 
     def get_files_to_process(self, path, suffix='csv', force_local=False):
