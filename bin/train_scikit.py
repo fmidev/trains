@@ -8,7 +8,10 @@ import itertools
 import numpy as np
 
 from sklearn.model_selection import train_test_split
+
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import SGDRegressor
+
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
@@ -59,6 +62,8 @@ def main():
     # steps=options.n_loops
     if options.model == 'rf':
         model = RandomForestRegressor(n_estimators=50, warm_start=True, n_jobs=-1)
+    elif options.model == 'lr':
+        model = SGDRegressor(warm_start=True)
 
     rmses, maes, r2s, start_times, end_times, end_times_obj = [], [], [], [], [], []
 
@@ -66,7 +71,7 @@ def main():
     end = start + timedelta(days=options.day_step, hours=options.hour_step)
     if end > endtime: end = endtime
 
-    while end <= endtime:
+    while end <= endtime and start < end:
         logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'),
                                                             end.strftime('%Y-%m-%d %H:%M')))
 
@@ -126,7 +131,10 @@ def main():
         # X_batch, y_batch = X_train[indices], y_train[indices]
 
         logging.info('Training...')
-        model.fit(X_train, y_train)
+        if options.model == 'rf':
+            model.fit(X_train, y_train)
+        else:
+            model.partial_fit(X_train, y_train)
 
         # Metrics
         y_pred = model.predict(X_test)
@@ -141,7 +149,7 @@ def main():
         end_times.append(end.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times_obj.append(end)
 
-        if options.model == 'rf':
+        if options.model in ['rf', 'lr']:
             logging.info('R2 score for training: {}'.format(model.score(X_train, y_train)))
 
         logging.info('RMSE: {}'.format(rmse))
