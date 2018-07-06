@@ -120,11 +120,11 @@ def main():
         i = 0
         for t in times:
             if t not in avg_delay.keys():
-                avg_delay[t] = target[i]
-                avg_pred_delay[t] = y_pred[i]
+                avg_delay[t] = [target[i]]
+                avg_pred_delay[t] = [y_pred[i]]
             else:
-                avg_delay[t] = (target[i] - avg_delay[t])/station_count
-                avg_pred_delay[t] = (y_pred[i] - avg_pred_delay[t])/station_count
+                avg_delay[t].append(target[i])
+                avg_pred_delay[t].append(y_pred[i])
             i += 1
 
         all_times = all_times.union(set(times))
@@ -149,6 +149,10 @@ def main():
     io.dict_to_csv(station_r2, '{}/station_r2.csv'.format(options.save_path))
 
     all_times = sorted(list(all_times))
+    for t,l in avg_delay.items():
+        avg_delay[t] = sum(l)/len(l)
+    for t, l in avg_pred_delay.items():
+        avg_pred_delay[t] = sum(l)/len(l)        
     avg_delay = list(OrderedDict(sorted(avg_delay.items(), key=lambda t: t[0])).values())
     avg_pred_delay = list(OrderedDict(sorted(avg_pred_delay.items(), key=lambda t: t[0])).values())
 
