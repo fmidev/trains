@@ -71,7 +71,7 @@ services:
       - ~:/root:ro
       - ~/trains:/a
 #############
-  pgtobq:
+  sep_testset:
     volumes:
       - ~:/root:ro
       - ~/trains:/a
@@ -80,7 +80,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/m.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-DEBUG}
+    command: python -u bin/sep_testset.py --logging_level ${LOGGING:-INFO}
 #############
   rfr:
     volumes:
