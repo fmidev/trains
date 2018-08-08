@@ -166,9 +166,12 @@ def main():
         viz.rfc_feature_importance(model.feature_importances_, fname)
         io._upload_to_bucket(filename=fname, ext_filename=fname)
 
-    fname = options.output_path+'/learning_over_time.png'
-    viz.plot_learning_over_time(end_times_obj, rmses, maes, r2s, filename=fname)
-    io._upload_to_bucket(filename=fname, ext_filename=fname)
+    try:
+        fname = options.output_path+'/learning_over_time.png'
+        viz.plot_learning_over_time(end_times_obj, rmses, maes, r2s, filename=fname)
+        io._upload_to_bucket(filename=fname, ext_filename=fname)
+    except Exception as e:
+        logging.error(e)
 
     error_data = {'start_times': start_times,
                   'end_times': end_times,

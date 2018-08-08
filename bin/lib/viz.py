@@ -20,6 +20,8 @@ from os.path import basename
 import logging
 from datetime import datetime as dt
 import matplotlib.dates as mdates
+from matplotlib.dates import MO, TU, WE, TH, FR, SA, SU
+
 
 class Viz:
 
@@ -726,13 +728,14 @@ class Viz:
         self._save(plt, filename)
 
     def plot_learning_over_time(self, times, rmse=None, mae=None,
-                                r2=None, heading='Model error development over time', filename='error.png'):
+                                r2=None, heading='Model error development over time',
+                                filename='error.png'):
 
         fig, ax1 = plt.subplots(figsize=(16,10))
 
         years = mdates.YearLocator()
         months = mdates.MonthLocator()
-        days = mdates.DayLocator()
+        days = mdates.DayLocator(byweekday=MO)
         hours = mdates.HourLocator()
         yearsFmt = mdates.DateFormatter('%d/%m %Y')
 
