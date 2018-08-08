@@ -90,7 +90,7 @@ services:
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2009-12-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2009_18_wo_testset} --feature_dataset ${FEATURE_TABLE:-features_1} --day_step 2190 --gs_bucket trains-data
+    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2009-12-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-INFO} --model ${MODEL:-rf} --feature_dataset ${FEATURE_DATASET:-trains_2009_18_wo_testset} --feature_table ${FEATURE_TABLE:-features_1} --day_step 2190 --gs_bucket trains-data
 #############
   lr:
     volumes:
