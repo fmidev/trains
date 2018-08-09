@@ -735,7 +735,7 @@ class Viz:
 
         years = mdates.YearLocator()
         months = mdates.MonthLocator()
-        days = mdates.DayLocator(byweekday=MO)
+        days = mdates.DayLocator()
         hours = mdates.HourLocator()
         yearsFmt = mdates.DateFormatter('%d/%m %Y')
 
@@ -767,7 +767,7 @@ class Viz:
 
         ax1.xaxis.set_major_locator(months)
         ax1.xaxis.set_major_formatter(yearsFmt)
-        ax1.xaxis.set_minor_locator(days)
+        #ax1.xaxis.set_minor_locator(days)
 
         plt.format_xdata = mdates.DateFormatter('%Y %m %d')
         plt.grid(True)

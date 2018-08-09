@@ -582,6 +582,25 @@ class IO:
                 aggs[param] = 'mean'
         return aggs
 
+    def get_aggs_from_param_names(self, params):
+        """
+        Get aggregation type from param names
+
+        params : list
+                 list of params
+
+        return dict which can be give for pandas agg function
+        """
+        aggs = {}
+        possible_aggs = ['min', 'max', 'mean', 'sum', 'median']
+        for param in params:
+            agg = param.split('_')[0]
+            if agg in possible_aggs:
+                aggs[param] = agg
+            else:
+                aggs[param] = 'mean'
+        return aggs
+
     def filter_train_type(self, labels_df=[],
                           train_types=[],
                           sum_types = False,
@@ -611,7 +630,6 @@ class IO:
             return labels_df
 
         mask = labels_df.loc[:,train_type_column].isin(train_types)
-
         filt_labels_df = labels_df[(mask)]
 
         if sum_types:
@@ -629,6 +647,10 @@ class IO:
             filt_labels_df.columns = filt_labels_df.columns.droplevel(1)
             filt_labels_df.drop_duplicates([location_column, time_column], inplace=True)
             #print(filt_labels_df)
+
+        # Not needed any more but exists in parameter lists and thus as missing cause warnings
+        if train_type_column not in filt_labels_df:
+            filt_labels_df[train_type_column] = None
 
         return filt_labels_df
 
