@@ -8,6 +8,7 @@ import itertools
 import numpy as np
 from configparser import ConfigParser
 
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
 
 from sklearn.ensemble import RandomForestRegressor
@@ -20,6 +21,17 @@ from sklearn.metrics import r2_score
 from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
+
+def report_cv_results(results, n_top=3):
+    for i in range(1, n_top + 1):
+        candidates = np.flatnonzero(results['rank_test_score'] == i)
+        for candidate in candidates:
+            print("Model with rank: {0}".format(i))
+            print("Mean validation score: {0:.3f} (std: {1:.3f})".format(
+                  results['mean_test_score'][candidate],
+                  results['std_test_score'][candidate]))
+            print("Parameters: {0}".format(results['params'][candidate]))
+            print("")
 
 def _config(options): #config_filename, section):
     parser = ConfigParser()
@@ -82,21 +94,8 @@ def main():
                                                                   starttime.strftime('%Y-%m-%d'),
                                                                   endtime.strftime('%Y-%m-%d')))
 
-    #locations = a.get_locations_by_dataset('trains-1.0', starttime, endtime)
-
-    #params, param_names = io.read_parameters(options.parameters_file, drop=2)
-    #calc_param_names = ['flashcount', 'max_precipitation3h', 'max_precipitation6h']
-    #meta_param_names = ['trainstation', 'time']
-
-    #feature_param_names = param_names + calc_param_names
-    #label_param_names = ['train_type', 'delay']
-
-    #all_param_names = label_param_names + feature_param_names + meta_param_names
     all_param_names = options.label_params + options.feature_params + options.meta_params
-
-    # print(all_param_names)
     aggs = io.get_aggs_from_param_names(options.feature_params)
-    # print(aggs)
 
     if options.model == 'rf':
         model = RandomForestRegressor(n_estimators=50, warm_start=True, n_jobs=-1)
@@ -159,14 +158,41 @@ def main():
 
         n_samples, n_dims = X_train.shape
 
-        # indices = np.random.choice(n_samples, options.batch_size)
-        # X_batch, y_batch = X_train[indices], y_train[indices]
+        if int(options.cv) == 1:
+            logging.info('Doing random search for hyper parameters...')
 
-        logging.info('Training...')
-        if options.model == 'rf':
-            model.fit(X_train, y_train)
+            if options.model == 'rf':
+                param_grid = {"n_estimators": [10, 100, 200, 400, 800, 1600, 3200],
+                              "max_depth": [3, 20, None],
+                              "max_features": ["auto", "sqrt", "log2", None],
+                              "min_samples_split": [2,5,10],
+                              "min_samples_leaf": [1, 2, 4, 10],
+                              "bootstrap": [True, False]}
+            elif options.model == 'lr':
+                param_grid = {"penalty": [None, 'l2', 'l1'],
+                              "alpha": [0.00001, 0.0001, 0.001, 0.01, 0.1],
+                              "l1_ratio": [0.1, 0.15, 0.2, 0.5],
+                              "shuffle": [True, False],
+                              "learning_rate": ['constant', 'optimal', 'invscaling'],
+                              "eta0": [0.001, 0.01, 0.1],
+                              "power_t": [0.1, 0.25, 0.5]}
+            else:
+                raise("No param_grid set for given model ({})".format(options.model))
+
+            random_search = RandomizedSearchCV(model,
+                                               param_distributions=param_grid,
+                                               n_iter=int(options.n_iter_search))
+
+            random_search.fit(X_train, y_train)
+            logging.info("RandomizedSearchCV done.")
+            report_cv_results(random_search.cv_results_)
+            sys.exit()
         else:
-            model.partial_fit(X_train, y_train)
+            logging.info('Training...')
+            if options.model == 'rf':
+                model.fit(X_train, y_train)
+            else:
+                model.partial_fit(X_train, y_train)
 
         # Metrics
         y_pred = model.predict(X_test)
