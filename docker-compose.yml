@@ -90,7 +90,7 @@ services:
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --config_filename cnf/rf.ini --config_name all_all_1 --logging_level ${LOGGING:-INFO}
+    command: python -u bin/train_scikit.py --config_filename cnf/rf.ini --config_name ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO}
 #############
   lr:
     volumes:
@@ -101,7 +101,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --config_filename cnf/lr.ini --config_name all_all_1 --logging_level ${LOGGING:-INFO}
+    command: python -u bin/train_scikit.py --config_filename cnf/lr.ini --config_name  ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO}
 #############
   lrdev:
     volumes:
