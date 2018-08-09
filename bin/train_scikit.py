@@ -6,6 +6,7 @@ from datetime import timedelta
 import json
 import itertools
 import numpy as np
+from configparser import ConfigParser
 
 from sklearn.model_selection import train_test_split
 
@@ -20,7 +21,43 @@ from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
 
+def _config(options): #config_filename, section):
+    parser = ConfigParser()
+    parser.read(options.config_filename)
 
+    if parser.has_section(options.config_name):
+        params = parser.items(options.config_name)
+        for param in params:
+            setattr(options, param[0], param[1])
+
+        options.feature_params = options.feature_params.split(',')
+        options.label_params = options.label_params.split(',')
+        options.meta_params = options.meta_params.split(',')
+
+        try:
+            options.save_path
+        except:
+            options.save_path = 'models/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
+
+        options.save_file = options.save_path+'/model.pkl'
+
+        try:
+            options.output_path
+        except:
+            options.output_path = 'results/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
+
+        try:
+            options.log_dir
+        except:
+            options.log_dir = '/tmp/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
+
+        if options.dev == 1: options.n_loops = 100
+
+        return options
+    else:
+        raise Exception('Section {0} not found in the {1} file'.format(options.section, options.config_filename))
+
+    return tables
 
 def main():
     """
@@ -41,34 +78,35 @@ def main():
     export_dir = options.save_path+'/serving'
 
     starttime, endtime = io.get_dates(options)
-    logging.info('Using feature dataset {}, label dataset {} and time range {} - {}'.format(options.feature_dataset,
-                                                                                            options.label_dataset,
-                                                                                            starttime.strftime('%Y-%m-%d'),
-                                                                                            endtime.strftime('%Y-%m-%d')))
+    logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
+                                                                  starttime.strftime('%Y-%m-%d'),
+                                                                  endtime.strftime('%Y-%m-%d')))
 
     #locations = a.get_locations_by_dataset('trains-1.0', starttime, endtime)
 
-    params, param_names = io.read_parameters(options.parameters_file, drop=2)
-    calc_param_names = ['flashcount', 'max_precipitation3h', 'max_precipitation6h']
-    meta_param_names = ['trainstation', 'time']
+    #params, param_names = io.read_parameters(options.parameters_file, drop=2)
+    #calc_param_names = ['flashcount', 'max_precipitation3h', 'max_precipitation6h']
+    #meta_param_names = ['trainstation', 'time']
 
-    feature_param_names = param_names + calc_param_names
-    label_param_names = ['train_type', 'delay']
+    #feature_param_names = param_names + calc_param_names
+    #label_param_names = ['train_type', 'delay']
 
-    all_param_names = label_param_names + feature_param_names + meta_param_names
+    #all_param_names = label_param_names + feature_param_names + meta_param_names
+    all_param_names = options.label_params + options.feature_params + options.meta_params
 
-    aggs = io.get_aggs_from_params(feature_param_names)
+    # print(all_param_names)
+    aggs = io.get_aggs_from_param_names(options.feature_params)
+    # print(aggs)
 
-    # steps=options.n_loops
     if options.model == 'rf':
         model = RandomForestRegressor(n_estimators=50, warm_start=True, n_jobs=-1)
     elif options.model == 'lr':
-        model = SGDRegressor(warm_start=True)
+        model = SGDRegressor(warm_start=True, max_iter=int(options.n_loops))
 
     rmses, maes, r2s, start_times, end_times, end_times_obj = [], [], [], [], [], []
 
     start = starttime
-    end = start + timedelta(days=options.day_step, hours=options.hour_step)
+    end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
     if end > endtime: end = endtime
 
     while end <= endtime and start < end:
@@ -85,9 +123,6 @@ def main():
                                table=options.feature_table,
                                parameters=all_param_names)
 
-            # Manually remove data which is used for testing performance.
-            data = data.loc[(data['time'] < '2011-02-01') | (data['time'] > '2011-03-01')]
-
             data = io.filter_train_type(labels_df=data,
                                         train_types=['K','L'],
                                         sum_types=True,
@@ -96,20 +131,17 @@ def main():
                                         time_column='time',
                                         sum_columns=['delay'],
                                         aggs=aggs)
-
             data.sort_values(by=['time', 'trainstation'], inplace=True)
-            l_data = data.loc[:,meta_param_names + label_param_names]
-            f_data = data[meta_param_names + feature_param_names]
 
-            #print(l_data)
-            #print(f_data)
+            l_data = data.loc[:,options.meta_params + options.label_params]
+            f_data = data.loc[:,options.meta_params + options.feature_params]
 
         except ValueError as e:
             f_data, l_data = [], []
 
         if len(f_data) == 0 or len(l_data) == 0:
             start = end
-            end = start + timedelta(days=options.day_step, hours=options.hour_step)
+            end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
             continue
 
         f_data.rename(columns={'trainstation':'loc_name'}, inplace=True)
@@ -157,7 +189,7 @@ def main():
         logging.info('R2 score: {}'.format(r2))
 
         start = end
-        end = start + timedelta(days=options.day_step, hours=options.hour_step)
+        end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
         if end > endtime: end = endtime
 
     io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
@@ -184,28 +216,9 @@ def main():
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--starttime', type=str, help='Start time of the classification data interval')
-    parser.add_argument('--endtime', type=str, help='End time of the classification data interval')
 
-    parser.add_argument('--output_path', type=str, default=None, help='Path where visualizations are saved')
-    parser.add_argument('--gs_bucket', type=str, default=None, help='Google Cloud bucket name to upload results')
-    parser.add_argument('--save_path', type=str, default=None, help='Model save path and filename')
-    parser.add_argument('--model', type=str, default='rf', help='Model save path and filename')
-
-    parser.add_argument('--project', type=str, default='trains-197305', help='BigQuery project name')
-    parser.add_argument('--feature_dataset', type=str, default='trains_all_features', help='Dataset name for features')
-    parser.add_argument('--label_dataset', type=str, default='trains_labels', help='Dataset name for labels')
-    parser.add_argument('--feature_table', type=str, default='features', help='Table name for features')
-    parser.add_argument('--label_table', type=str, default='labels_passenger', help='Table name for labels')
-    parser.add_argument('--parameters_file', type=str, default='cnf/parameters_shorten.txt', help='Param conf filename')
-
-    parser.add_argument('--batch_size', type=int, default=100, help='Batch size for training')
-
-    parser.add_argument('--day_step', type=int, default=30, help='How many days are handled in one step')
-    parser.add_argument('--hour_step', type=int, default=0, help='How many hours are handled in one step')
-
-    #parser.add_argument('--stations_file', type=str, default=None, help='Stations file to rename stations from loc_id to station name')
-    parser.add_argument('--log_dir', type=str, default=None, help='Tensorboard log dir')
+    parser.add_argument('--config_filename', type=str, default=None, help='Configuration file name')
+    parser.add_argument('--config_name', type=str, default=None, help='Configuration file name')
     parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
 
     parser.add_argument('--logging_level',
@@ -215,19 +228,7 @@ if __name__=='__main__':
 
     options = parser.parse_args()
 
-    if options.save_path is None:
-        options.save_path = 'models/'+options.model+'/'+options.feature_dataset
-
-    options.save_file = options.save_path+'/model.pkl'
-
-    if options.output_path is None:
-        options.output_path = 'results/'+options.model+'/'+options.feature_dataset
-
-    if options.log_dir is None:
-        options.log_dir = '/tmp/'+options.model+'/'+options.feature_dataset
-
-    if options.dev == 1: options.n_loops = 100
-    else: options.n_loops = 10000
+    _config(options)
 
     logging_level = {'DEBUG':logging.DEBUG,
                      'INFO':logging.INFO,
