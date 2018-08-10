@@ -9,7 +9,7 @@ import numpy as np
 from configparser import ConfigParser
 
 from sklearn.decomposition import IncrementalPCA
-from sklearn.preprocessing import normalize
+from sklearn.preprocessing import StandardScaler
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
@@ -188,8 +188,9 @@ def main():
 
         if options.normalize:
             logging.info('Normalizing data...')
-            X_train = normalize(X_train)
-            X_test = normalize(X_test)
+            scaler = StandardScaler()
+            X_train = scaler.fit_transform(X_train)
+            X_test = scaler.fit_transform(X_test)
 
         if options.pca:
             logging.info('Doing PCA analyzis for the data...')
