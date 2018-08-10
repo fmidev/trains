@@ -9,6 +9,7 @@ import numpy as np
 from configparser import ConfigParser
 
 from sklearn.decomposition import IncrementalPCA
+from sklearn.preprocessing import normalize
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
@@ -92,6 +93,7 @@ def _config(options): #config_filename, section):
         _bval('cv')
         _bval('pca')
         _bval('whiten')
+        _bval('normalize')
 
         _intval('pca_components')
 
@@ -183,6 +185,11 @@ def main():
         X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
 
         n_samples, n_dims = X_train.shape
+
+        if options.normalize:
+            logging.info('Normalizing data...')
+            X_train = normalize(X_train)
+            X_test = normalize(X_test)
 
         if options.pca:
             logging.info('Doing PCA analyzis for the data...')
