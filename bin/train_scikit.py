@@ -8,6 +8,8 @@ import itertools
 import numpy as np
 from configparser import ConfigParser
 
+from sklearn.decomposition import IncrementalPCA
+
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
 
@@ -63,7 +65,35 @@ def _config(options): #config_filename, section):
         except:
             options.log_dir = '/tmp/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
 
+        if not os.path.exists(options.save_path):
+            os.makedirs(options.save_path)
+
+        if not os.path.exists(options.output_path):
+            os.makedirs(options.output_path)
+
         if options.dev == 1: options.n_loops = 100
+
+        def _bval(name):
+            ''' Convert option from int to bool'''
+            val = getattr(options, name, False)
+            if int(val) == 1: val = True
+            else: val = False
+            setattr(options, name, val)
+
+        def _intval(name):
+            ''' Convert int val to integer taking possible None value into account'''
+            val = getattr(options, name, None)
+            if val is not None and val != 'None':
+                val = int(val)
+            else:
+                val = None
+            setattr(options, name, val)
+
+        _bval('cv')
+        _bval('pca')
+        _bval('whiten')
+
+        _intval('pca_components')
 
         return options
     else:
@@ -80,15 +110,6 @@ def main():
     io = _io.IO(gs_bucket=options.gs_bucket)
     viz = _viz.Viz()
 
-    if not os.path.exists(options.save_path):
-        os.makedirs(options.save_path)
-
-    if not os.path.exists(options.output_path):
-        os.makedirs(options.output_path)
-
-    model_filename = options.save_path+'/model_state.ckpt'
-    export_dir = options.save_path+'/serving'
-
     starttime, endtime = io.get_dates(options)
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
                                                                   starttime.strftime('%Y-%m-%d'),
@@ -101,6 +122,11 @@ def main():
         model = RandomForestRegressor(n_estimators=50, warm_start=True, n_jobs=-1)
     elif options.model == 'lr':
         model = SGDRegressor(warm_start=True, max_iter=int(options.n_loops))
+
+    if options.pca:
+        ipca = IncrementalPCA(n_components=options.pca_components,
+                              whiten = options.whiten,
+                              copy = False)
 
     rmses, maes, r2s, start_times, end_times, end_times_obj = [], [], [], [], [], []
 
@@ -158,7 +184,15 @@ def main():
 
         n_samples, n_dims = X_train.shape
 
-        if int(options.cv) == 1:
+        if options.pca:
+            logging.info('Doing PCA analyzis for the data...')
+            X_train = ipca.fit_transform(X_train)
+            fname = options.output_path+'/ipca_explained_variance.png'
+            viz.explained_variance(ipca, fname)
+            io._upload_to_bucket(filename=fname, ext_filename=fname)
+            X_test = ipca.fit_transform(X_test)
+
+        if options.cv:
             logging.info('Doing random search for hyper parameters...')
 
             if options.model == 'rf':
@@ -181,7 +215,8 @@ def main():
 
             random_search = RandomizedSearchCV(model,
                                                param_distributions=param_grid,
-                                               n_iter=int(options.n_iter_search))
+                                               n_iter=int(options.n_iter_search),
+                                               n_jobs=-1)
 
             random_search.fit(X_train, y_train)
             logging.info("RandomizedSearchCV done.")
