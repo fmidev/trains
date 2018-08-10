@@ -257,7 +257,7 @@ class Viz:
         fig, ax1 = plt.subplots(figsize=(16,10))
 
         plt.clf()
-        plt.xticks(np.arange(0, pca.n_components_, 10))
+        plt.xticks(np.arange(0, pca.n_components_, 2))
         plt.grid()
 
         plt.plot(pca.explained_variance_, linewidth=1)
@@ -266,14 +266,12 @@ class Viz:
         #ax2.plot(pca.explained_variance_ratio_, linewidth=1)
 
         plt.axis('tight')
-        plt.xlabel('n components')
-        plt.ylabel('explained variance')
+        plt.xlabel('Number of components')
+        plt.ylabel('Explained variance')
         #ax2.set_ylabel('explained variance ratio')
 
         self._save(plt, filename)
-
         logging.debug("Saved explained variance to "+filename)
-
 
 
     def plot_learning(self, cost_train_vec, cost_test_vec, filename):
