@@ -26,16 +26,23 @@ from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
 
-def report_cv_results(results, n_top=3):
+def report_cv_results(results, filename=None, n_top=3):
+    res = ""
     for i in range(1, n_top + 1):
         candidates = np.flatnonzero(results['rank_test_score'] == i)
         for candidate in candidates:
-            print("Model with rank: {0}".format(i))
-            print("Mean validation score: {0:.3f} (std: {1:.3f})".format(
+            res += "Model with rank: {0}\n".format(i)
+            res += "Mean validation score: {0:.3f} (std: {1:.3f})\n".format(
                   results['mean_test_score'][candidate],
-                  results['std_test_score'][candidate]))
-            print("Parameters: {0}".format(results['params'][candidate]))
-            print("")
+                  results['std_test_score'][candidate])
+            res += "Parameters: {0}\n".format(results['params'][candidate])
+            res += "\n"
+
+    if filename is not None:
+        with open(filename, 'w') as f:
+            f.write(res)
+
+    logging.info(res)
 
 def _config(options): #config_filename, section):
     parser = ConfigParser()
@@ -236,7 +243,9 @@ def main():
 
             random_search.fit(X_train, y_train)
             logging.info("RandomizedSearchCV done.")
-            report_cv_results(random_search.cv_results_)
+            fname = options.output_path+'/random_search_cv_results.txt'
+            report_cv_results(random_search.cv_results_, fname)
+            io._upload_to_bucket(filename=fname, ext_filename=fname)
             sys.exit()
         else:
             logging.info('Training...')
