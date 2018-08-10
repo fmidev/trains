@@ -10,6 +10,7 @@ from configparser import ConfigParser
 
 from sklearn.decomposition import IncrementalPCA
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import Imputer
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
@@ -94,6 +95,7 @@ def _config(options): #config_filename, section):
         _bval('pca')
         _bval('whiten')
         _bval('normalize')
+        _bval('impute')
 
         _intval('pca_components')
 
@@ -185,6 +187,12 @@ def main():
         X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
 
         n_samples, n_dims = X_train.shape
+
+        if options.impute:
+            logging.info('Imputing missing values with {}...'.format(options.impute_strategy))
+            imputer = Imputer(missing_values=-99, strategy=options.impute_strategy, copy=False)
+            X_train = imputer.fit_transform(X_train)
+            X_test = imputer.fit_transform(X_test)
 
         if options.normalize:
             logging.info('Normalizing data...')
