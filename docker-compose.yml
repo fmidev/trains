@@ -8,15 +8,7 @@ services:
       PYTHONUNBUFFERED: 1
     image: tervo/ml:cpu
     command: python -u bin/get_as_csv.py --dataset ${DATASET:-trains-10d-sample} --type ${TYPE:-feature} --starttime 2018-01-07 --endtime 2018-01-08
-#############
-  create_db:
-    image: tervo/ml:cpu
-    command: python -u bin/ml_feature_db/db/create_db.py --force --logging_level DEBUG
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-    environment:
-      PYTHONUNBUFFERED: 1
+
 #############
   add_stations:
     image: tervo/ml:cpu
@@ -63,13 +55,8 @@ services:
     volumes:
       - ~:/root:ro
       - ~/trains:/a
-#############
-  fixprec:
-    image: tervo/ml:cpu
-    command: python -u bin/fix_precipitation_sum.py --dataset ${DATASET:-prectest} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-02} --logging_level ${LOGGING:-INFO}
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
+
+
 #############
   sep_testset:
     volumes:
@@ -81,6 +68,8 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/sep_testset.py --logging_level ${LOGGING:-INFO}
+
+
 #############
   rfr:
     volumes:
@@ -103,27 +92,17 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/train_scikit.py --config_filename cnf/lr.ini --config_name  ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO}
 #############
-  lrdev:
+  svr:
     volumes:
       - ~:/root:ro
       - ~/trains:/a
       - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-lr} --day_step ${DAY_STEP:-1}
-#############
-  scikit_dev:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2010-01-10} --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --label_dataset ${LABEL_DATASET:-trains_labels} --model ${MODEL:-rf} --day_step ${DAY_STEP:-30}
+    command: python -u bin/train_scikit.py --config_filename cnf/svr.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+
 #############
   vizperf:
     volumes:
@@ -147,27 +126,14 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/viz_performance.py --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_2011_14} --model_file ${MODEL_FILE:-models/rf/trains_1y_dev/model.pkl} --stations TKL,SAV #,VS
 #############
-  clean_db:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-    image: tervo/ml:cpu_local
-    command: python -u bin/clean_duplicates.py --dataset ${DATASET:-trains-10d-sample} --logging_leve ${LOGGING:-INFO} --count 29
-#############
-  moddev:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    image: tervo/ml:cpu
-    command: python -u bin/lr.py --dataset ${DATASET:-trains-tiny-subset} --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-DEBUG} --save_path /tmp/moddev/model --output_path /tmp/moddev/results
-#############
   vis:
     volumes:
       - ~:/root:ro
       - ~/trains:/a
     image: tervo/ml:cpu
     command: python -u bin/visualize_data.py --dataset ${DATASET:-trains-10d-sample} --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-INFO} --save_path labels_vis_1_0 --what ${WHAT:-histograms,history}
+
+
 #############
   board:
     volumes:

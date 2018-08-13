@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import SGDRegressor
+from sklearn.svm import SVR
 
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
@@ -133,6 +134,8 @@ def main():
         model = RandomForestRegressor(n_estimators=50, warm_start=True, n_jobs=-1)
     elif options.model == 'lr':
         model = SGDRegressor(warm_start=True, max_iter=int(options.n_loops))
+    elif options.model == 'svr':
+        model = SVR()
 
     if options.pca:
         ipca = IncrementalPCA(n_components=options.pca_components,
@@ -167,6 +170,7 @@ def main():
                                         time_column='time',
                                         sum_columns=['delay'],
                                         aggs=aggs)
+
             data.sort_values(by=['time', 'trainstation'], inplace=True)
 
             l_data = data.loc[:,options.meta_params + options.label_params]
@@ -233,6 +237,14 @@ def main():
                               "learning_rate": ['constant', 'optimal', 'invscaling'],
                               "eta0": [0.001, 0.01, 0.1],
                               "power_t": [0.1, 0.25, 0.5]}
+            elif options.model == 'svc':
+                param_grid = {"C": [0.001, 0.01, 0.1, 1, 10],
+                              "epsilon": [0.01, 0.1, 0.5],
+                              "kernel": ['rbf', 'linear', 'poly', 'sigmoid', 'precomputed'],
+                              "degree": [2, 3 ,4],
+                              "shrinking": [True, False],
+                              "gamma": [0.001, 0.01, 0.1],
+                              "coef0": [0, 0.1, 1]}
             else:
                 raise("No param_grid set for given model ({})".format(options.model))
 
@@ -249,7 +261,7 @@ def main():
             sys.exit()
         else:
             logging.info('Training...')
-            if options.model == 'rf':
+            if options.model in ['rf', 'svr']:
                 model.fit(X_train, y_train)
             else:
                 model.partial_fit(X_train, y_train)
