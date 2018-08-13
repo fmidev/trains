@@ -23,9 +23,12 @@ def main():
     #               'endtime': dt.datetime.strptime('2011-03-01', "%Y-%m-%d")
     #              })
 
-    times.append({'starttime': dt.datetime.strptime('2016-06-01', "%Y-%m-%d"),
-                  'endtime': dt.datetime.strptime('2016-07-01', "%Y-%m-%d")
-    })
+    # times.append({'starttime': dt.datetime.strptime('2016-06-01', "%Y-%m-%d"),
+    #               'endtime': dt.datetime.strptime('2016-07-01', "%Y-%m-%d")
+    # })
+
+    times.append({'starttime': dt.datetime.strptime('2017-02-01', "%Y-%m-%d"),
+                  'endtime': dt.datetime.strptime('2017-03-01', "%Y-%m-%d")})
 
     logging.info('Using times: {}'.format(times))
 
