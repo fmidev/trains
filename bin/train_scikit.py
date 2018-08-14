@@ -194,6 +194,9 @@ def main():
             l_data = data.loc[:,options.meta_params + options.label_params]
             f_data = data.loc[:,options.meta_params + options.feature_params]
 
+            print(f_data.columns)
+            print(options.feature_params)
+
         except ValueError as e:
             f_data, l_data = [], []
 
@@ -205,7 +208,7 @@ def main():
         f_data.rename(columns={'trainstation':'loc_name'}, inplace=True)
 
         logging.debug('Labels shape: {}'.format(l_data.shape))
-        logging.debug('Features shape: {}'.format(f_data.shape))
+
         logging.info('Processing {} rows...'.format(len(f_data)))
 
         assert l_data.shape[0] == f_data.shape[0]
@@ -215,11 +218,13 @@ def main():
 
         X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
 
+        logging.debug('Features shape: {}'.format(X_train.shape))
+
         n_samples, n_dims = X_train.shape
 
         if options.impute:
             logging.info('Imputing missing values with {}...'.format(options.impute_strategy))
-            imputer = Imputer(missing_values=-99, strategy=options.impute_strategy, copy=False)
+            imputer = Imputer(missing_values=-99, strategy=options.impute_strategy)
             X_train = imputer.fit_transform(X_train)
             X_test = imputer.fit_transform(X_test)
 
@@ -236,6 +241,8 @@ def main():
             viz.explained_variance(ipca, fname)
             io._upload_to_bucket(filename=fname, ext_filename=fname)
             X_test = ipca.fit_transform(X_test)
+
+        logging.debug('Features shape after pre-processing: {}'.format(X_train.shape))
 
         if options.cv:
             logging.info('Doing random search for hyper parameters...')
