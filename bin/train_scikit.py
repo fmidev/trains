@@ -46,6 +46,43 @@ def report_cv_results(results, filename=None, n_top=3):
     logging.info(res)
 
 def _config(options): #config_filename, section):
+
+    def _path(name, root_dir):
+        ''' Read path from options and create it if not exists'''
+        val = getattr(options, name, None)
+        if val is None or val == 'None':
+            val = root_dir+'/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
+
+        if not os.path.exists(val):
+            os.makedirs(val)
+
+        setattr(options, name, val)
+
+    def _fval(name):
+        ''' Convert float val to float taking possible None value into account'''
+        val = getattr(options, name, None)
+        if val is not None and val != 'None':
+            val = float(val)
+        else:
+            val = None
+        setattr(options, name, val)
+
+    def _bval(name):
+        ''' Convert option from int to bool'''
+        val = getattr(options, name, False)
+        if int(val) == 1: val = True
+        else: val = False
+        setattr(options, name, val)
+
+    def _intval(name):
+        ''' Convert int val to integer taking possible None value into account'''
+        val = getattr(options, name, None)
+        if val is not None and val != 'None':
+            val = int(val)
+        else:
+            val = None
+        setattr(options, name, val)
+
     parser = ConfigParser()
     parser.read(options.config_filename)
 
@@ -58,55 +95,27 @@ def _config(options): #config_filename, section):
         options.label_params = options.label_params.split(',')
         options.meta_params = options.meta_params.split(',')
 
-        try:
-            options.save_path
-        except:
-            options.save_path = 'models/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
-
-        options.save_file = options.save_path+'/model.pkl'
-
-        try:
-            options.output_path
-        except:
-            options.output_path = 'results/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
-
-        try:
-            options.log_dir
-        except:
-            options.log_dir = '/tmp/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
-
-        if not os.path.exists(options.save_path):
-            os.makedirs(options.save_path)
-
-        if not os.path.exists(options.output_path):
-            os.makedirs(options.output_path)
-
         if options.dev == 1: options.n_loops = 100
 
-        def _bval(name):
-            ''' Convert option from int to bool'''
-            val = getattr(options, name, False)
-            if int(val) == 1: val = True
-            else: val = False
-            setattr(options, name, val)
-
-        def _intval(name):
-            ''' Convert int val to integer taking possible None value into account'''
-            val = getattr(options, name, None)
-            if val is not None and val != 'None':
-                val = int(val)
-            else:
-                val = None
-            setattr(options, name, val)
+        _path('save_path', 'models')
+        _path('output_path', 'results')
+        _path('log_dir', '/tmp')
+        options.save_file = options.save_path+'/model.pkl'
 
         _bval('cv')
         _bval('pca')
         _bval('whiten')
         _bval('normalize')
         _bval('impute')
+        _bval('shuffle')
+
+        _fval('alpha')
+        _fval('eta0')
+        _fval('power_t')
 
         _intval('pca_components')
-
+        _intval('n_loops')
+        
         return options
     else:
         raise Exception('Section {0} not found in the {1} file'.format(options.section, options.config_filename))
@@ -131,9 +140,18 @@ def main():
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
     if options.model == 'rf':
-        model = RandomForestRegressor(n_estimators=50, warm_start=True, n_jobs=-1)
+        model = RandomForestRegressor(n_estimators=50,
+                                      warm_start=True,
+                                      n_jobs=-1)
     elif options.model == 'lr':
-        model = SGDRegressor(warm_start=True, max_iter=int(options.n_loops))
+        model = SGDRegressor(warm_start=True,
+                             max_iter=options.n_loops,
+                             shuffle=options.shuffle,
+                             power_t=options.power_t,
+                             penalty=options.penalty,
+                             learning_rate=options.learning_rate,
+                             eta0=options.eta0,
+                             alpha=options.alpha)
     elif options.model == 'svr':
         model = SVR()
 
@@ -223,7 +241,7 @@ def main():
             logging.info('Doing random search for hyper parameters...')
 
             if options.model == 'rf':
-                param_grid = {"n_estimators": [10, 100, 200, 400, 800, 1600, 3200],
+                param_grid = {"n_estimators": [10, 100, 200, 800],
                               "max_depth": [3, 20, None],
                               "max_features": ["auto", "sqrt", "log2", None],
                               "min_samples_split": [2,5,10],
@@ -237,7 +255,7 @@ def main():
                               "learning_rate": ['constant', 'optimal', 'invscaling'],
                               "eta0": [0.001, 0.01, 0.1],
                               "power_t": [0.1, 0.25, 0.5]}
-            elif options.model == 'svc':
+            elif options.model == 'svr':
                 param_grid = {"C": [0.001, 0.01, 0.1, 1, 10],
                               "epsilon": [0.01, 0.1, 0.5],
                               "kernel": ['rbf', 'linear', 'poly', 'sigmoid', 'precomputed'],
