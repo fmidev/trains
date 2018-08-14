@@ -115,10 +115,10 @@ def _config(options): #config_filename, section):
 
         _intval('pca_components')
         _intval('n_loops')
-        
+
         return options
     else:
-        raise Exception('Section {0} not found in the {1} file'.format(options.section, options.config_filename))
+        raise Exception('Section {} not found in the {} file'.format(options.config_name, options.config_filename))
 
     return tables
 
