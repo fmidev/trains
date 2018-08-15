@@ -26,6 +26,7 @@ from sklearn.metrics import r2_score
 from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
+from lib import imputer
 
 def report_cv_results(results, filename=None, n_top=3):
     res = ""
@@ -108,6 +109,7 @@ def _config(options): #config_filename, section):
         _bval('normalize')
         _bval('impute')
         _bval('shuffle')
+        _bval('bootstrap')
 
         _fval('alpha')
         _fval('eta0')
@@ -115,6 +117,10 @@ def _config(options): #config_filename, section):
 
         _intval('pca_components')
         _intval('n_loops')
+        _intval('n_estimators')
+        _intval('min_samples_split')
+        _intval('min_samples_leaf')
+        _intval('max_depth')
 
         return options
     else:
@@ -140,9 +146,14 @@ def main():
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
     if options.model == 'rf':
-        model = RandomForestRegressor(n_estimators=50,
-                                      warm_start=True,
-                                      n_jobs=-1)
+        model = RandomForestRegressor(n_estimators=options.n_estimators,
+                                      n_jobs=-1,
+                                      min_samples_leaf=options.min_samples_leaf,
+                                      min_samples_split=options.min_samples_split,
+                                      max_features=options.max_features,
+                                      max_depth=options.max_depth,
+                                      bootstrap=options.bootstrap
+                                      )
     elif options.model == 'lr':
         model = SGDRegressor(warm_start=True,
                              max_iter=options.n_loops,
@@ -191,16 +202,17 @@ def main():
 
             data.sort_values(by=['time', 'trainstation'], inplace=True)
 
+            if options.impute:
+                logging.info('Imputing missing values...')
+                data = imputer.fit_transform(data)
+
             l_data = data.loc[:,options.meta_params + options.label_params]
             f_data = data.loc[:,options.meta_params + options.feature_params]
-
-            print(f_data.columns)
-            print(options.feature_params)
 
         except ValueError as e:
             f_data, l_data = [], []
 
-        if len(f_data) == 0 or len(l_data) == 0:
+        if len(f_data) < 2 or len(l_data) < 2:
             start = end
             end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
             continue
@@ -208,7 +220,6 @@ def main():
         f_data.rename(columns={'trainstation':'loc_name'}, inplace=True)
 
         logging.debug('Labels shape: {}'.format(l_data.shape))
-
         logging.info('Processing {} rows...'.format(len(f_data)))
 
         assert l_data.shape[0] == f_data.shape[0]
@@ -221,12 +232,6 @@ def main():
         logging.debug('Features shape: {}'.format(X_train.shape))
 
         n_samples, n_dims = X_train.shape
-
-        if options.impute:
-            logging.info('Imputing missing values with {}...'.format(options.impute_strategy))
-            imputer = Imputer(missing_values=-99, strategy=options.impute_strategy)
-            X_train = imputer.fit_transform(X_train)
-            X_test = imputer.fit_transform(X_test)
 
         if options.normalize:
             logging.info('Normalizing data...')
