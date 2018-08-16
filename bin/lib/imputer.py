@@ -7,7 +7,7 @@ import multiprocessing
 
 _X = pd.DataFrame()
 _DISTANCE_LIMIT = 150
-_SEARCH_SPAN = 5
+_SEARCH_SPAN = 2
 
 def _apply_df(args):
     """
@@ -133,10 +133,8 @@ def fit_transform(X, missing_value=-99):
     cpu_count = multiprocessing.cpu_count()
 
     _X = pd.DataFrame(X)
-    _X.drop(columns=['train_type'], inplace=True)
-    pd.set_option('display.max_columns', 500)
     _X.replace(missing_value, np.NaN, inplace=True)
-    _X.sort_values(by=['lat', 'time'], inplace=True)
+    _X.sort_values(by=['time', 'lat', 'lon'], inplace=True)
 
     orig_len = len(_X)
 
@@ -153,6 +151,5 @@ def fit_transform(X, missing_value=-99):
     logging.info('Imputation done.\n Total rows: {} \n Rows with missing values: {} \n Imputed rows: {}\n Dropped rows: {}'.format(orig_len, null_len, new_null_len, int(null_len - new_null_len)))
 
     ret = pd.concat([nulls, non_nulls])
-    ret.loc[:, 'train_type'] = None
 
     return ret
