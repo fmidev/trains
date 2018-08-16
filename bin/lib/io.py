@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import sys, re, tempfile, subprocess
+import sys, re, tempfile, subprocess, os
 import numpy as np
 from os import listdir
 from os.path import isfile, join
@@ -58,6 +58,29 @@ class IO:
                 logging.info('Uploaded to {}'.format(ext_filename))
             except:
                 logging.warning('Uploading file to bucket failed')
+
+    def _download_from_bucket(self, ext_filename, local_filename, force=False):
+        """
+        Download file from bucket and save it to 'local_filename'
+        """
+        if os.path.exists(local_filename) and not force:
+            logging.info('File {} already exists. Not overwriting...'.format(local_filename))
+            return
+        if os.path.exists(local_filename) and force:
+            logging.info('File {} already exists. Overwriting...'.format(local_filename))
+
+        if self.s3:
+            raise ValueError('S3 not implemented')
+        if self.gs:
+            try:
+                client = storage.Client()
+                bucket = client.get_bucket(self.bucket_name)
+                blob = storage.Blob(ext_filename, bucket)
+                blob.download_to_filename(local_filename)
+                logging.info('Downloaded {} to {}'.format(ext_filename, local_filename))
+            except:
+                logging.warning('Downloading failed')
+
 
     #
     # GENERAL
@@ -224,7 +247,7 @@ class IO:
         logging.info('Saved model into {}'.format(filename))
         self._upload_to_bucket(filename, ext_filename)
 
-    def load_scikit_model(self, filename):
+    def load_scikit_model(self, filename, force_local=False):
         """
         Load scikit model from file
         """
