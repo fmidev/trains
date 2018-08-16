@@ -27,6 +27,7 @@ from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
 from lib import imputer
+from lib import config as _config
 
 def report_cv_results(results, filename=None, n_top=3):
     res = ""
@@ -45,88 +46,6 @@ def report_cv_results(results, filename=None, n_top=3):
             f.write(res)
 
     logging.info(res)
-
-def _config(options): #config_filename, section):
-
-    def _path(name, root_dir):
-        ''' Read path from options and create it if not exists'''
-        val = getattr(options, name, None)
-        if val is None or val == 'None':
-            val = root_dir+'/'+options.model+'/'+options.feature_dataset+'/'+options.config_name
-
-        if not os.path.exists(val):
-            os.makedirs(val)
-
-        setattr(options, name, val)
-
-    def _fval(name):
-        ''' Convert float val to float taking possible None value into account'''
-        val = getattr(options, name, None)
-        if val is not None and val != 'None':
-            val = float(val)
-        else:
-            val = None
-        setattr(options, name, val)
-
-    def _bval(name):
-        ''' Convert option from int to bool'''
-        val = getattr(options, name, False)
-        if int(val) == 1: val = True
-        else: val = False
-        setattr(options, name, val)
-
-    def _intval(name):
-        ''' Convert int val to integer taking possible None value into account'''
-        val = getattr(options, name, None)
-        if val is not None and val != 'None':
-            val = int(val)
-        else:
-            val = None
-        setattr(options, name, val)
-
-    parser = ConfigParser()
-    parser.read(options.config_filename)
-
-    if parser.has_section(options.config_name):
-        params = parser.items(options.config_name)
-        for param in params:
-            setattr(options, param[0], param[1])
-
-        options.feature_params = options.feature_params.split(',')
-        options.label_params = options.label_params.split(',')
-        options.meta_params = options.meta_params.split(',')
-
-        if options.dev == 1: options.n_loops = 100
-
-        _path('save_path', 'models')
-        _path('output_path', 'results')
-        _path('log_dir', '/tmp')
-        options.save_file = options.save_path+'/model.pkl'
-
-        _bval('cv')
-        _bval('pca')
-        _bval('whiten')
-        _bval('normalize')
-        _bval('impute')
-        _bval('shuffle')
-        _bval('bootstrap')
-
-        _fval('alpha')
-        _fval('eta0')
-        _fval('power_t')
-
-        _intval('pca_components')
-        _intval('n_loops')
-        _intval('n_estimators')
-        _intval('min_samples_split')
-        _intval('min_samples_leaf')
-        _intval('max_depth')
-
-        return options
-    else:
-        raise Exception('Section {} not found in the {} file'.format(options.config_name, options.config_filename))
-
-    return tables
 
 def main():
     """
@@ -204,7 +123,9 @@ def main():
 
             if options.impute:
                 logging.info('Imputing missing values...')
+                data.drop(columns=['train_type'], inplace=True)
                 data = imputer.fit_transform(data)
+                data.loc[:, 'train_type'] = None
 
             l_data = data.loc[:,options.meta_params + options.label_params]
             f_data = data.loc[:,options.meta_params + options.feature_params]
@@ -356,7 +277,7 @@ if __name__=='__main__':
 
     options = parser.parse_args()
 
-    _config(options)
+    _config.read(options)
 
     logging_level = {'DEBUG':logging.DEBUG,
                      'INFO':logging.INFO,
