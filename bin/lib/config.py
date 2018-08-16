@@ -45,7 +45,8 @@ def read(options):
     if parser.has_section(options.config_name):
         params = parser.items(options.config_name)
         for param in params:
-            setattr(options, param[0], param[1])
+            if getattr(options, param[0], None) is None:
+                setattr(options, param[0], param[1])
 
         options.feature_params = options.feature_params.split(',')
         options.label_params = options.label_params.split(',')
@@ -53,6 +54,10 @@ def read(options):
 
         _path('save_path', 'models')
         _path('output_path', 'results')
+        options.vis_path = options.output_path+'/vis'
+        if not os.path.exists(options.vis_path):
+            os.makedirs(options.vis_path)
+
         _path('log_dir', '/tmp')
         options.save_file = options.save_path+'/model.pkl'
 

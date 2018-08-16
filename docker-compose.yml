@@ -137,7 +137,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/viz_performance.py --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_2011_14} --model_file ${MODEL_FILE:-models/rf/trains_1y_dev/model.pkl} --stations TKL,SAV #,VS
+    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/lr.ini} --config_name ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO} #--stations PSL,OL #,VS
 #############
   vis:
     volumes:

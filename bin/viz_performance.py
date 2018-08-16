@@ -18,6 +18,7 @@ from sklearn import metrics
 from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
+from lib import config as _config
 
 def main():
     """
@@ -25,31 +26,33 @@ def main():
     """
 
     bq = _bq.BQHandler()
-    io = _io.IO()
+    io = _io.IO(gs_bucket=options.gs_bucket)
     viz = _viz.Viz()
 
-    if not os.path.exists(options.save_path):
-        os.makedirs(options.save_path)
+    # if not os.path.exists(options.save_path):
+    #     os.makedirs(options.save_path)
 
     starttime, endtime = io.get_dates(options)
-    logging.info('Using feature dataset {}, label dataset {} and time range {} - {}'.format(options.feature_dataset,
-                                                                                            options.label_dataset,
-                                                                                            starttime.strftime('%Y-%m-%d'),
-                                                                                            endtime.strftime('%Y-%m-%d')))
+    logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
+                                                                  starttime.strftime('%Y-%m-%d'),
+                                                                  endtime.strftime('%Y-%m-%d')))
 
-    params, param_names = io.read_parameters(options.parameters_file, drop=2)
-    calc_param_names = ['flashcount', 'max_precipitation3h', 'max_precipitation6h']
-    meta_param_names = ['trainstation', 'time']
+    # params, param_names = io.read_parameters(options.parameters_file, drop=2)
+    # calc_param_names = ['flashcount', 'max_precipitation3h', 'max_precipitation6h']
+    # meta_param_names = ['trainstation', 'time']
+    #
+    # feature_param_names = param_names + calc_param_names
+    # label_param_names = ['train_type', 'delay']
+    #
+    # all_param_names = label_param_names + feature_param_names + meta_param_names
+    # aggs = io.get_aggs_from_params(feature_param_names)
 
-    feature_param_names = param_names + calc_param_names
-    label_param_names = ['train_type', 'delay']
+    all_param_names = options.label_params + options.feature_params + options.meta_params
+    aggs = io.get_aggs_from_param_names(options.feature_params)
 
-    all_param_names = label_param_names + feature_param_names + meta_param_names
-
-    aggs = io.get_aggs_from_params(feature_param_names)
-
-    if options.model_file is not None:
-        predictor = io.load_scikit_model(options.model_file)
+    if options.save_file is not None:
+        io._download_from_bucket(options.save_file, options.save_file)
+        predictor = io.load_scikit_model(options.save_file)
     else:
         predictor = tf.contrib.predictor.from_saved_model(options.model_path)
 
@@ -77,8 +80,8 @@ def main():
                            endtime,
                            loc_col='trainstation',
                            project=options.project,
-                           dataset=options.feature_dataset,
-                           table=options.feature_table,
+                           dataset='trains_testset',
+                           table='features_1',
                            parameters=all_param_names,
                            locations=[station])
 
@@ -92,8 +95,11 @@ def main():
                                     aggs=aggs)
 
         data.sort_values(by=['time', 'trainstation'], inplace=True)
-        l_data = data.loc[:,meta_param_names + label_param_names]
-        f_data = data[meta_param_names + feature_param_names]
+        l_data = data.loc[:,options.meta_params + options.label_params]
+        f_data = data.loc[:,options.meta_params + options.feature_params]
+
+        # l_data = data.loc[:,meta_param_names + label_param_names]
+        # f_data = data[meta_param_names + feature_param_names]
         times = data.loc[:,'time']
 
         logging.debug('Labels shape: {}'.format(l_data.shape))
@@ -107,10 +113,10 @@ def main():
 
         station_count += 1
 
-        target = l_data['delay'].astype(np.float64).as_matrix().ravel()
-        features = f_data.drop(columns=['trainstation', 'time']).astype(np.float64).as_matrix()
+        target = l_data['delay'].astype(np.float64).values.ravel()
+        features = f_data.drop(columns=['trainstation', 'time']).astype(np.float64).values
 
-        if options.model_file is not None:
+        if options.save_file is not None:
             y_pred = predictor.predict(features)
         else:
             y_pred = predictor({'X': features})['pred_output'].ravel()
@@ -141,12 +147,19 @@ def main():
 
         times_formatted = [t.strftime('%Y-%m-%dT%H:%M:%S') for t in times]
         delay_data = {'times': times_formatted, 'delay': target, 'predicted delay': y_pred}
-        io.write_csv(delay_data, '{}/delays_{}.csv'.format(options.save_path, station))
-        viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), '{}/{}.png'.format(options.save_path, station))
+        fname = '{}/delays_{}.csv'.format(options.vis_path, station)
 
-    io.dict_to_csv(station_rmse, '{}/station_rmse.csv'.format(options.save_path))
-    io.dict_to_csv(station_median_abs_err, '{}/station_median_absolute_error.csv'.format(options.save_path))
-    io.dict_to_csv(station_r2, '{}/station_r2.csv'.format(options.save_path))
+        io.write_csv(delay_data, fname)
+        io._upload_to_bucket(filename=fname, ext_filename=fname)
+        fname='{}/{}.png'.format(options.vis_path, station)
+        viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname)
+        io._upload_to_bucket(filename=fname, ext_filename=fname)
+
+
+
+    io.dict_to_csv(station_rmse, '{}/station_rmse.csv'.format(options.vis_path))
+    io.dict_to_csv(station_median_abs_err, '{}/station_median_absolute_error.csv'.format(options.vis_path))
+    io.dict_to_csv(station_r2, '{}/station_r2.csv'.format(options.vis_path))
 
     all_times = sorted(list(all_times))
     for t,l in avg_delay.items():
@@ -165,30 +178,36 @@ def main():
 
     all_times_formatted = [t.strftime('%Y-%m-%dT%H:%M:%S') for t in all_times]
     delay_data = {'times': all_times_formatted, 'delay': avg_delay, 'predicted delay': avg_pred_delay}
-    io.write_csv(delay_data, '{}/avg_delays_all_stations.csv'.format(options.save_path))
 
-    viz.plot_delay(all_times, avg_delay, avg_pred_delay, 'Average delay for all station', '{}/avg_all_stations.png'.format(options.save_path))
+    fname='{}/avg_delays_all_stations.csv'.format(options.vis_path)
+    io.write_csv(delay_data, fname)
+    io._upload_to_bucket(filename=fname, ext_filename=fname)
 
+    fname='{}/avg_all_stations.png'.format(options.vis_path)
+    viz.plot_delay(all_times, avg_delay, avg_pred_delay, 'Average delay for all station', fname)
+    io._upload_to_bucket(filename=fname, ext_filename=fname)
 
 
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--config_filename', type=str, default=None, help='Configuration file name')
+    parser.add_argument('--config_name', type=str, default=None, help='Configuration file name')
     parser.add_argument('--starttime', type=str, default='2011-02-01', help='Start time of the classification data interval')
-    parser.add_argument('--endtime', type=str, default='2011-03-01', help='End time of the classification data interval')
+    parser.add_argument('--endtime', type=str, default='2017-03-01', help='End time of the classification data interval')
     # parser.add_argument('--starttime', type=str, default='2013-06-01', help='Start time of the classification data interval')
     # parser.add_argument('--endtime', type=str, default='2013-07-01', help='End time of the classification data interval')
-    parser.add_argument('--save_path', type=str, default=None, help='Output path')
+    #parser.add_argument('--save_path', type=str, default=None, help='Output path')
     parser.add_argument('--model_path', type=str, default=None, help='Path of TensorFlow Estimator file')
     parser.add_argument('--model_file', type=str, default=None, help='Path and filename of SciKit model file. If this is given, model_path is ignored.')
-    parser.add_argument('--project', type=str, default='trains-197305', help='BigQuery project name')
-    parser.add_argument('--feature_dataset', type=str, default='trains_all_features', help='Dataset name for features')
-    parser.add_argument('--label_dataset', type=str, default='trains_labels', help='Dataset name for labels')
-    parser.add_argument('--feature_table', type=str, default='features', help='Table name for features')
-    parser.add_argument('--label_table', type=str, default='labels_passenger', help='Table name for labels')
+    #parser.add_argument('--project', type=str, default='trains-197305', help='BigQuery project name')
+    #parser.add_argument('--feature_dataset', type=str, default='trains_testset', help='Dataset name for features')
+    #parser.add_argument('--label_dataset', type=str, default='trains_labels', help='Dataset name for labels')
+    #parser.add_argument('--feature_table', type=str, default='features_1', help='Table name for features')
+    #parser.add_argument('--label_table', type=str, default='labels_passenger', help='Table name for labels')
     parser.add_argument('--stations', type=str, default=None, help='List of train stations separated by comma')
     parser.add_argument('--stations_file', type=str, default='cnf/stations.json', help='Stations file, list of stations to process')
-    parser.add_argument('--parameters_file', type=str, default='cnf/parameters_shorten.txt', help='Param conf filename')
+    #parser.add_argument('--parameters_file', type=str, default='cnf/parameters_shorten.txt', help='Param conf filename')
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',
@@ -197,8 +216,10 @@ if __name__=='__main__':
 
     options = parser.parse_args()
 
-    if options.save_path is None:
-        options.save_path = 'visualizations/'+options.feature_dataset
+    _config.read(options)
+
+    # if options.save_path is None:
+    #     options.save_path = 'visualizations/'+options.feature_dataset
 
     logging_level = {'DEBUG':logging.DEBUG,
                      'INFO':logging.INFO,
