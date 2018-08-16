@@ -1,0 +1,8 @@
+FROM tervo/ml:cpu
+
+ADD bin /a/bin
+ADD cnf /a/cnf
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+
+CMD python -u bin/impute_missing_values.py
