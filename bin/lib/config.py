@@ -52,6 +52,11 @@ def read(options):
         options.label_params = options.label_params.split(',')
         options.meta_params = options.meta_params.split(',')
 
+        try:
+            options.train_types = options.train_types.split(',')
+        except:
+            options.train_types = ['K', 'L']
+
         _path('save_path', 'models')
         _path('output_path', 'results')
         options.vis_path = options.output_path+'/vis'
