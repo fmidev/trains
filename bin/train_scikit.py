@@ -111,7 +111,7 @@ def main():
                                parameters=all_param_names)
 
             data = io.filter_train_type(labels_df=data,
-                                        train_types=['K','L'],
+                                        train_types=options.train_types,
                                         sum_types=True,
                                         train_type_column='train_type',
                                         location_column='trainstation',
