@@ -79,8 +79,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/impute_missing_values.py --logging_level ${LOGGING:-INFO}
-
+    command: python -u bin/impute_missing_values.py --logging_level ${LOGGING:-INFO} 
 
 
 #############
