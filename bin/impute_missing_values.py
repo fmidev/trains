@@ -17,7 +17,9 @@ def main():
     bq = _bq.BQHandler()
 
     times = []
-    times.append({'starttime': dt.datetime.strptime('2009-11-29', "%Y-%m-%d"),
+    # times.append({'starttime': dt.datetime.strptime('2009-11-29', "%Y-%m-%d"),
+    #               'endtime': dt.datetime.strptime('2018-01-10', "%Y-%m-%d")})
+    times.append({'starttime': dt.datetime.strptime('2014-06-02', "%Y-%m-%d"),
                   'endtime': dt.datetime.strptime('2018-01-10', "%Y-%m-%d")})
 
     logging.info('Using times: {}'.format(times))
@@ -52,15 +54,16 @@ def main():
                 data_to_scale = pd.concat([data_to_scale, data])
 
                 data.set_index(['time', 'trainstation'], inplace=True)
+
+                if len(data) < 1 or len(data) < 1:
+                    start = end
+                    end = start + timedelta(days=daystep)
+                    continue
+
                 bq.dataset_to_table(data, options.dst_dataset, options.dst_table)
 
             except ValueError as e:
                 logging.warning(e)
-
-            if len(data) < 1 or len(data) < 1:
-                start = end
-                end = start + timedelta(days=daystep)
-                continue
 
             start = end
             end = start + timedelta(days=daystep)
@@ -75,7 +78,7 @@ if __name__=='__main__':
     parser.add_argument('--src_table', type=str, default='features_1', help='Src table name for features')
     parser.add_argument('--dst_dataset', type=str, default='trains_2009_18_wo_testset', help='Dst dataset name for features')
     parser.add_argument('--dst_table', type=str, default='features_imputed', help='Dst table name for features')
-    
+
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',
