@@ -1,0 +1,8 @@
+models/
+results/
+data/
+material/
+ml-feature-db/
+openshift/
+spark/
+visualizations/
