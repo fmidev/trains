@@ -19,8 +19,9 @@ import json,csv
 import logging
 import datetime as dt
 import pandas as pd
+from lib.manipulator import Manipulator
 
-class IO:
+class IO(Manipulator):
 
     s3 = False
     gs = False
@@ -224,20 +225,7 @@ class IO:
             self.bucket.download_file(filename, tmp_m.name)
             file_to_open=tmp_m.name
 
-        with open(file_to_open, 'r', encoding='utf-8') as f:
-            lines = f.read().splitlines()
-
-        params, names = [], []
-        for line in lines:
-            param, name = line.split(';')
-            params.append(param)
-            names.append(name)
-
-        if drop > 0:
-            params = params[drop:]
-            names = names[drop:]
-
-        return params, names
+        return super().read_parameters(file_to_open, drop)
 
     def save_scikit_model(self, model, filename, ext_filename=None):
         """
@@ -263,7 +251,7 @@ class IO:
         else:
             tmp = filename
 
-        return joblib.load(str(tmp))
+        return super().load_scikit_model(tmp)
 
     def save_model(self, model_filename, weights_filename, history_filename, model, history):
         """
@@ -461,32 +449,7 @@ class IO:
         df[location_column] = df.apply(lambda row: change(row[location_column]), axis=1)
         return df
 
-    def get_train_stations(self, filename=None, key='short'):
 
-        """
-        Get railway stations from file or db digitrafic
-        """
-        if filename is None:
-            url = "https://rata.digitraffic.fi/api/v1/metadata/stations"
-
-            with urllib.request.urlopen(url) as u:
-                data = json.loads(u.read().decode("utf-8"))
-        else:
-            with open(filename) as f:
-                data = json.load(f)
-
-        stations = dict()
-
-        if key == 'short':
-            for s in data:
-                latlon = {'lat': s['latitude'], 'lon': s['longitude'], 'name': s['stationName']}
-                stations[s['stationShortCode'].encode('utf-8').decode()] = latlon
-        elif key == 'long':
-            for s in data:
-                latlon = {'lat': s['latitude'], 'lon': s['longitude'], 'name': s['stationShortCode']}
-                stations[s['stationName'].encode('utf-8').decode()] = latlon
-
-        return stations
 
     def find_id(self, locations, name):
         """
@@ -661,8 +624,10 @@ class IO:
                 d[col] = ['sum']
             for col,method in aggs.items():
                 d[col] = [method]
-            d['lat'] = ['max']
-            d['lon'] = ['max']
+            if 'lat' in labels_df:
+                d['lat'] = ['max']
+            if 'lon' in labels_df:
+                d['lon'] = ['max']
 
             filt_labels_df = filt_labels_df.groupby([location_column, time_column], as_index=False).agg(d)
             #print(filt_labels_df)
@@ -788,7 +753,7 @@ class IO:
         """
 
         # Go through data and calculate 3h and 6h sums
-        data = self._calc_prec_sums(data, prec_column).iloc[6:]
+        data = super()._calc_prec_sums(data, prec_column).iloc[6:]
         return data
 
 
@@ -861,35 +826,6 @@ class IO:
 
         return filt_labels_metadata, filt_obs
 
-    def _calc_prec_sums(self, obs, prec_column=5):
-        """
-        Calculate 3h and 6h prec sums (private method)
-        """
-        sum_3h = []
-        sum_6h = []
-
-        obs.loc[:,'3hsum'] = -99
-        obs.loc[:,'6hsum'] = -99
-
-        for h,values in obs.iterrows():
-            prec = values[prec_column]
-            if prec < 0: prec = 0
-            sum_3h.append(prec)
-            sum_6h.append(prec)
-
-            if len(sum_3h) > 3:
-                sum_3h.pop(0)
-                _sum = sum(sum_3h)
-                if _sum < 0: _sum = -99
-                obs.loc[h, '3hsum'] = _sum
-
-            if len(sum_6h) > 6:
-                sum_6h.pop(0)
-                _sum = sum(sum_6h)
-                if _sum < 0: _sum = -99
-                obs.loc[h, '6hsum'] = _sum
-
-        return obs
 
     def df_to_serving_json(self, df):
         """
