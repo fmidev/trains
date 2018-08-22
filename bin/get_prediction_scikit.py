@@ -15,8 +15,9 @@ import multiprocessing
 from io import StringIO
 import pandas as pd
 
-from mlfdb import mlfdb
-import lib.io
+# from mlfdb import mlfdb
+# import lib.io
+import lib.manipulator
 from lib import dbhandler as _db
 
 def get_forecasts(args):
@@ -48,7 +49,8 @@ def main():
     Get forecasted delay for every station
     """
 
-    io = lib.io.IO()
+    #io = lib.io.IO()
+    io = lib.manipulator.Manipulator()
 
     params, _ = io.read_parameters(options.parameters_filename)
     params.append('origintime')
@@ -82,6 +84,13 @@ def main():
     data = get_forecasts(args)
     logging.info('Calculating precipitation sums...')
     data = io._calc_prec_sums(data, prec_column='Precipitation1h').fillna(-99)
+
+    # Drop precipitation sums if they are not needed
+    if options.prec3h == 0:
+        data.drop(columns=['3hsum'], inplace=True)
+    if options.prec6h == 0:
+        data.drop(columns=['6hsum'], inplace=True)
+
     logging.info('Data shape: {}'.format(data.shape))
 
     # files = io.df_to_serving_file(data)
@@ -139,6 +148,18 @@ if __name__=='__main__':
                         type=str,
                         default='cnf/forecast_parameters_shorten.txt',
                         help='Parameters file name')
+    parser.add_argument('--prec3h',
+                        type=int,
+                        default=1,
+                        help='Calculate precipitation 3 hour')
+    parser.add_argument('--prec6h',
+                        type=int,
+                        default=1,
+                        help='Calculate precipitation 6 hour')
+    parser.add_argument('--flashcount',
+                        type=int,
+                        default=1,
+                        help='Calculate flashcount')
     parser.add_argument('--dev',
                         type=int,
                         default=0,
