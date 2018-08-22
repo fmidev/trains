@@ -59,31 +59,47 @@ def read(options):
 
         _path('save_path', 'models')
         _path('output_path', 'results')
-        options.vis_path = options.output_path+'/vis'
+        options.vis_path = options.output_path+'/validation_testset'
         if not os.path.exists(options.vis_path):
             os.makedirs(options.vis_path)
 
         _path('log_dir', '/tmp')
         options.save_file = options.save_path+'/model.pkl'
 
+        # common / several
         _bval('cv')
         _bval('pca')
         _bval('whiten')
         _bval('normalize')
         _bval('impute')
-        _bval('shuffle')
-        _bval('bootstrap')
+        _intval('n_loops')
 
+        # linear regression
         _fval('alpha')
         _fval('eta0')
         _fval('power_t')
+        _bval('shuffle')
 
-        _intval('pca_components')
-        _intval('n_loops')
+        # ard model
+        _fval('alpha_1')
+        _fval('alpha_2')
+        _fval('lambda_1')
+        _fval('lambda_2')
+        _bval('fit_intercept')
+        _bval('copy_X')
+        _fval('threshold_lambda')
+        _intval('n_samples')
+
+        # rf
+        _bval('bootstrap')
         _intval('n_estimators')
         _intval('min_samples_split')
         _intval('min_samples_leaf')
         _intval('max_depth')
+
+        # other
+        _intval('pca_components')
+
 
         return options
     else:

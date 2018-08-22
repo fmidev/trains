@@ -79,7 +79,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/impute_missing_values.py --logging_level ${LOGGING:-INFO} 
+    command: python -u bin/impute_missing_values.py --logging_level ${LOGGING:-INFO}
 
 
 #############
@@ -114,6 +114,19 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/train_scikit.py --config_filename cnf/svr.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+#############
+  ard:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/train_scikit.py --config_filename cnf/ard.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+
+
 
 #############
   vizperf:
@@ -162,4 +175,4 @@ services:
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
     image: docker.weatherproof.fi:5000/trains-prediction:1.2
-    command: python -u bin/get_prediction_scikit.py --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --model_file ${MODEL_FILE:-models/rf/trains_1y_dev/model.pkl}
+    command: python -u bin/get_prediction_scikit.py --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --model_file ${MODEL_FILE:-model/model.pkl} --prec6h 0 --parameters_filename cnf/16_params_1.txt
