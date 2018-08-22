@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import SGDRegressor
+from sklearn.linear_model import ARDRegression
 from sklearn.svm import SVR
 
 from sklearn.metrics import mean_squared_error
@@ -84,6 +85,15 @@ def main():
                              alpha=options.alpha)
     elif options.model == 'svr':
         model = SVR()
+    elif options.model == 'ard':
+        model = ARDRegression(n_iter=options.n_loops,
+                              alpha_1=options.alpha_1,
+                              alpha_2=options.alpha_2,
+                              lambda_1=options.lambda_1,
+                              lambda_2=options.lambda_2,
+                              threshold_lambda=options.threshold_lambda,
+                              fit_intercept=options.fit_intercept,
+                              copy_X=options.copy_X)
 
     if options.pca:
         ipca = IncrementalPCA(n_components=options.pca_components,
@@ -109,7 +119,6 @@ def main():
                                dataset=options.feature_dataset,
                                table=options.feature_table,
                                parameters=all_param_names)
-
             data = io.filter_train_type(labels_df=data,
                                         train_types=options.train_types,
                                         sum_types=True,
@@ -118,7 +127,6 @@ def main():
                                         time_column='time',
                                         sum_columns=['delay'],
                                         aggs=aggs)
-
             data.sort_values(by=['time', 'trainstation'], inplace=True)
 
             if options.impute:
@@ -126,6 +134,10 @@ def main():
                 data.drop(columns=['train_type'], inplace=True)
                 data = imputer.fit_transform(data)
                 data.loc[:, 'train_type'] = None
+
+            if options.model == 'ard' and len(data) > options.n_samples:
+                logging.info('Sampling {} values from data...'.format(options.n_samples))
+                data = data.sample(options.n_samples)
 
             l_data = data.loc[:,options.meta_params + options.label_params]
             f_data = data.loc[:,options.meta_params + options.feature_params]
@@ -142,7 +154,6 @@ def main():
 
         logging.debug('Labels shape: {}'.format(l_data.shape))
         logging.info('Processing {} rows...'.format(len(f_data)))
-
         assert l_data.shape[0] == f_data.shape[0]
 
         target = l_data['delay'].astype(np.float32).values
@@ -212,7 +223,7 @@ def main():
             sys.exit()
         else:
             logging.info('Training...')
-            if options.model in ['rf', 'svr']:
+            if options.model in ['rf', 'svr', 'ard']:
                 model.fit(X_train, y_train)
             else:
                 model.partial_fit(X_train, y_train)
@@ -230,7 +241,7 @@ def main():
         end_times.append(end.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times_obj.append(end)
 
-        if options.model in ['rf', 'lr']:
+        if options.model in ['rf', 'lr', 'ard']:
             logging.info('R2 score for training: {}'.format(model.score(X_train, y_train)))
 
         logging.info('RMSE: {}'.format(rmse))
@@ -259,7 +270,7 @@ def main():
                   'rmse': rmses,
                   'mae': maes,
                   'r2': r2s}
-    fname = '{}/errors.csv'.format(options.output_path)
+    fname = '{}/training_time_validation_errors.csv'.format(options.output_path)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
 
 if __name__=='__main__':
