@@ -73,6 +73,7 @@ def read(options):
         _bval('normalize')
         _bval('impute')
         _intval('n_loops')
+        _intval('batch_size')
 
         # linear regression
         _fval('alpha')
@@ -97,9 +98,13 @@ def read(options):
         _intval('min_samples_leaf')
         _intval('max_depth')
 
+        # kmeans
+        _bval('kmeans')
+        _intval('n_clusters')
+
         # other
         _intval('pca_components')
-
+        _intval('dbscan')
 
         return options
     else:
