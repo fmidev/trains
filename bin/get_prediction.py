@@ -16,7 +16,7 @@ from io import StringIO
 import pandas as pd
 
 from mlfdb import mlfdb
-import lib.io
+import lib.io_pred
 from lib import dbhandler as _db
 
 def get_forecasts(args):
@@ -48,7 +48,7 @@ def main():
     Get forecasted delay for every station
     """
 
-    io = lib.io.IO()
+    io = lib.io_pred.IO()
 
     params, _ = io.read_parameters(options.parameters_filename)
     params.append('origintime')

@@ -11,4 +11,7 @@ data/full
 data/delay_and_weather_data
 labels_vis_1_0_arch/
 models/
-results
+results/
+visualizations/
+model/
+openshift/
