@@ -274,33 +274,49 @@ class Viz:
         logging.debug("Saved explained variance to "+filename)
 
 
-    def plot_learning(self, cost_train_vec, cost_test_vec, filename):
+    def plot_learning(self, metrics, filename,
+                      x_label="Iterations", y_label="RMSE"):
 
-        fig, ax1 = plt.subplots(figsize=(16,10))
-
+        dashes = ['--', '-', '.', '-o-']
         plt.clf()
-        plt.grid()
+        fig = plt.figure(figsize=(26,10))
+        #fig, ax1 = plt.subplots(figsize=(26,10))
 
-        #ax1 = fig.add_subplot(gs00[1, 0])  #, adjustable='box-forced'
-        plt.plot(
-            np.arange(cost_train_vec.shape[0]),
-            cost_train_vec,
-            c="#27ae61",
-            label="train")
-        plt.plot(
-            np.arange(cost_test_vec.shape[0]),
-            cost_test_vec,
-            c="#c1392b",
-            label="test")
-        plt.xlabel("iterations")
-        plt.ylabel("cost function")
-        plt.title("cost function across iterations")
+        # plt.clf()
+        # fig.clf()
+        # plt.grid()
+        plt.suptitle("Loss function across iterations")
 
-        if ((max(cost_train_vec) - min(cost_train_vec) > 1000) or
-            (max(cost_test_vec) - min(cost_test_vec) > 1000)):
-            plt.yscale('log')
+        i = 1
+        for plot_data in metrics:
+            ax = fig.add_subplot(1, len(metrics), i)
+            ax.grid()
+            j=0
+            for metric in plot_data['metrics']:
+                dash = dashes[j%len(dashes)]
 
-        plt.legend()
+                ax.plot(np.arange(len(metric['values'])),
+                        metric['values'],
+                        c="#27ae61",
+                        label=metric['label'])
+                j += 1
+
+            if 'x_label' in plot_data:
+                ax.set_xlabel(plot_data['x_label'])
+            else:
+                ax.set_xlabel(x_label)
+
+            if 'y_label' in plot_data:
+                ax.set_ylabel(plot_data['y_label'])
+            else:
+                ax.set_ylabel(x_label)
+
+            #ax.set_yscale('log')
+
+            plt.legend()
+
+            i += 1
+
         self._save(plt, filename)
 
 
