@@ -98,6 +98,13 @@ def read(options):
         _intval('min_samples_leaf')
         _intval('max_depth')
 
+        # lstm
+        _intval('time_steps')
+        _intval('cell_size')
+        _fval('lr')
+        _intval('n_hidden')
+        _fval('quantile')  
+
         # kmeans
         _bval('kmeans')
         _intval('n_clusters')

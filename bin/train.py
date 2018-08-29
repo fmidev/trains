@@ -6,256 +6,324 @@ from datetime import timedelta
 import json
 import itertools
 import numpy as np
-import tensorflow as tf
-#from tensorflow.python.estimator.export import export
-from tensorflow.python.estimator import exporter
-from tensorflow.python.framework import constant_op
+import pandas as pd
+from configparser import ConfigParser
 
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
+
+from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import r2_score
+
+import tensorflow as tf
+from tensorflow.contrib import rnn
 
 from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
+from lib import config as _config
+from lib import LSTM
 
-from lib.model_functions import lr
-from lib.model_functions import rf
-from lib.model_functions import general
+def report_cv_results(results, filename=None, n_top=3):
+    """
+    Write cross validation results to file.
+    """
+    res = ""
+    for i in range(1, n_top + 1):
+        candidates = np.flatnonzero(results['rank_test_score'] == i)
+        for candidate in candidates:
+            res += "Model with rank: {0}\n".format(i)
+            res += "Mean validation score: {0:.3f} (std: {1:.3f})\n".format(
+                  results['mean_test_score'][candidate],
+                  results['std_test_score'][candidate])
+            res += "Parameters: {0}\n".format(results['params'][candidate])
+            res += "\n"
 
+    if filename is not None:
+        with open(filename, 'w') as f:
+            f.write(res)
+
+    logging.info(res)
+
+def get_batch_size(data, pad_strategy='pad', quantile=None):
+    """
+    Get batch size based on pad_strategy. See extract_batch docs for more info.
+    """
+    if pad_strategy == 'sample':
+        return min(data.groupby(['time']).size())
+    elif pad_strategy == 'pad':
+        return max(data.groupby(['time']).size())
+    elif pad_strategy == 'drop':
+        #logging.debug(data.groupby(['time']).size())
+        return int(data.groupby(['time']).size().quantile(quantile))
+
+def pad_along_axis(a, target_length, constant_values=-99, axis=0):
+    """
+    Pad along given axis
+    """
+    pad_size = target_length - a.shape[axis]
+    axis_nb = len(a.shape)
+
+    if pad_size < 0:
+        return a
+
+    npad = [(0, 0) for x in range(axis_nb)]
+    npad[axis] = (0, pad_size)
+
+    b = np.pad(a, pad_width=npad, mode='constant', constant_values=constant_values)
+
+    return b
+
+def extract_batch(data, n_timesteps, batch_num=0, batch_size=None, pad_strategy='pad', quantile=None):
+    """
+    Extract and/or preprocess batch from data.
+
+    data : pd.DataFrame
+           Data
+    n_timesteps : int
+                  Number of timesteps to be used in LSTM. If <0 all timesteps are used-
+    batch_num : int
+                Batch number, default 0
+    batch_size : int or None
+                 If None, batch size is got based on pad_strategy.
+                 If <0, all valid values are returned (used specially for test data)
+                 If >0, given batch size is used.
+    pad_strategy : str
+                   - If 'pad', largest timestep (with most stations) is chosen
+                   from the data and other timesteps are padded with -99
+                   - If 'sample', smallest timestep is chosen and other timesteps
+                   are sampled to match smallest one.
+                   - If 'drop', batch_size is chosen to to match options.quantile
+                   value. If for example options.quantile=0.3 70 percent of timesteps
+                   are taken into account.
+    quantile : float or None
+               Used to drop given fraction of smaller timesteps from data if
+               pad_strategy='drop'
+
+    return : (Values shape: (n_timesteps, batch_size, n_features), Labels shape (n_timesteps, batch_size))
+    """
+    # Detect batch size
+    if batch_size is None:
+        batch_size = get_batch_size(data, pad_strategy, quantile)
+    elif batch_size < 0:
+        batch_size = len(data)
+
+    # If pad_strategy is drop, drop timesteps with too few stations
+    if pad_strategy == 'drop':
+        t_size = data.groupby(['time']).size()
+        t_size = t_size[t_size >= batch_size].index.values
+        data = data[data.time.isin(t_size)]
+
+    all_times = data.time.unique()
+    stations = data.trainstation.unique()
+
+    if n_timesteps < 0:
+        n_timesteps = len(all_times)
+
+    # Pick times for the batch
+    start = batch_num*n_timesteps
+    end = start + n_timesteps
+    times = all_times[start:end]
+
+    values = []
+    labels = []
+
+    # Go through times
+    for t in times:
+        # Pick data for current time
+        timestep_values = data[data.loc[:,'time'] == t]
+
+        # If pad_strategy is drop and timestep is too small, ignore it and continue
+        if pad_strategy == 'drop' and batch_size > len(timestep_values):
+            continue
+
+        # If pad_strategy is sample or drop, sample data to match desired batch_size
+        if pad_strategy in ['sample','drop'] and batch_size < len(timestep_values):
+            timestep_values = timestep_values.sample(batch_size)
+
+        # pd dataframe to np array
+        timestamp_values = timestep_values.drop(columns=['time', 'trainstation', 'delay', 'train_type']).astype(np.float32).values
+        label_values = timestep_values.loc[:,'delay'].astype(np.float32).values
+
+        # if pad_strategy is pad and timestep is too small, pad it with -99
+        if pad_strategy == 'pad' and batch_size > len(timestamp_values):
+            timestamp_values = pad_along_axis(timestamp_values, batch_size, -99)
+            label_values = pad_along_axis(label_values, batch_size, -99)
+
+        values.append(timestamp_values)
+        labels.append(label_values)
+
+    values = np.array(values)
+    labels = np.array(labels)
+    #values = np.rollaxis(np.array(values), 1)
+    #labels = np.reshape(np.rollaxis(np.array(labels), 1), (batch_size, n_timesteps, 1))
+
+    logging.debug('Values shape: {}'.format(values.shape))
+    logging.debug('Labels shape: {}'.format(labels.shape))
+
+    return values, labels
 
 def main():
     """
-    Get data from db and save it as csv
+    Main program
     """
 
     bq = _bq.BQHandler()
-    io = _io.IO()
+    io = _io.IO(gs_bucket=options.gs_bucket)
     viz = _viz.Viz()
 
-    if not os.path.exists(options.save_path):
-        os.makedirs(options.save_path)
-
-    if not os.path.exists(options.output_path):
-        os.makedirs(options.output_path)
-
-    model_filename = options.save_path+'/model_state.ckpt'
-    export_dir = options.save_path+'/serving'
-
     starttime, endtime = io.get_dates(options)
-    logging.info('Using feature dataset {}, label dataset {} and time range {} - {}'.format(options.feature_dataset,
-                                                                                            options.label_dataset,
-                                                                                            starttime.strftime('%Y-%m-%d'),
-                                                                                            endtime.strftime('%Y-%m-%d')))
+    logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
+                                                                  starttime.strftime('%Y-%m-%d'),
+                                                                  endtime.strftime('%Y-%m-%d')))
 
-    #locations = a.get_locations_by_dataset('trains-1.0', starttime, endtime)
+    all_param_names = options.label_params + options.feature_params + options.meta_params
+    aggs = io.get_aggs_from_param_names(options.feature_params)
 
-    params, param_names = io.read_parameters(options.parameters_file, drop=2)
-    calc_param_names = ['flashcount', 'max_precipitation3h', 'max_precipitation6h']
-    meta_param_names = ['trainstation', 'time']
+    # Initialise errors
+    rmses, maes, steps = [], [], []
 
-    feature_param_names = param_names + calc_param_names
-    label_param_names = ['train_type', 'delay']
+    logging.info('Reading data...')
+    bq.set_params(starttime,
+                  endtime,
+                  loc_col='trainstation',
+                  project=options.project,
+                  dataset=options.feature_dataset,
+                  table=options.feature_table,
+                  parameters=all_param_names)
 
-    all_param_names = label_param_names + feature_param_names + meta_param_names
+    data = bq.get_rows()
+    data = io.filter_train_type(labels_df=data,
+                                train_types=options.train_types,
+                                sum_types=True,
+                                train_type_column='train_type',
+                                location_column='trainstation',
+                                time_column='time',
+                                sum_columns=['delay'],
+                                aggs=aggs)
+    data.sort_values(by=['time', 'trainstation'], inplace=True)
 
-    aggs = io.get_aggs_from_params(feature_param_names)
+    data_train, data_test = train_test_split(data, test_size=0.33)
+    X_test, y_test = extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
-    #model_params{n_dim = len(feature_param_names)
-    # Define number of gradient descent loops
+    # Define model
+    batch_size = get_batch_size(data_train, options.pad_strategy, quantile=options.quantile)
+    logging.info('Using batch size: {}'.format(batch_size))
+    model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr)
 
-    if True:
-        params = tf.contrib.tensor_forest.python.tensor_forest.ForestHParams(
-        num_classes=1,
-        num_features=len(feature_param_names),
-        regression=True,
-        num_trees=50,
-        max_nodes=1000
-        ).fill()
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
 
-        model = tf.contrib.tensor_forest.client.random_forest.TensorForestEstimator(        model_dir=options.log_dir,
-        params=params)
+    train_step = 0
+    while True:
+        # i = bq.get_batch_num()
+        # data = bq.get_batch()
+        X_train, y_train = extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
-        run_config = tf.estimator.RunConfig(save_summary_steps=None,
-                                            save_checkpoints_secs=None)
-        model = tf.estimator.Estimator(model_fn=rf.model_func,
-                                       model_dir=options.log_dir,
-                                       params={'n_dim': len(feature_param_names)},
-                                       config=run_config
-                                       )
-    else:
-        model = tf.estimator.Estimator(model_fn=lr.model_func,
-                                       model_dir=options.log_dir,
-                                       params={'n_dim': len(feature_param_names)}
-                                       )
+        if(len(X_train) < options.time_steps):
+            break
 
-    start = starttime
-    end = start + timedelta(days=options.day_step, hours=options.hour_step)
-    if end > endtime: end = endtime
+#        n_times, n_samples, n_dims = X_train.shape
 
-    while end <= endtime:
-        logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'),
-                                                            end.strftime('%Y-%m-%d %H:%M')))
+        if options.cv:
+            logging.info('Doing random search for hyper parameters...')
 
-        try:
-            # l_data = bq.get_rows(start,
-            #                      end,
-            #                      loc_col='loc_name',
-            #                      project=options.project,
-            #                      dataset=options.label_dataset,
-            #                      table=options.label_table)
+            param_grid = {"C": [0.001, 0.01, 0.1, 1, 10],
+                          "epsilon": [0.01, 0.1, 0.5],
+                          "kernel": ['rbf', 'linear', 'poly', 'sigmoid', 'precomputed'],
+                          "degree": [2, 3 ,4],
+                          "shrinking": [True, False],
+                          "gamma": [0.001, 0.01, 0.1],
+                          "coef0": [0, 0.1, 1]}
+
+            random_search = RandomizedSearchCV(model,
+                                               param_distributions=param_grid,
+                                               n_iter=int(options.n_iter_search),
+                                               n_jobs=-1)
+
+            random_search.fit(X_train, y_train)
+            logging.info("RandomizedSearchCV done.")
+            fname = options.output_path+'/random_search_cv_results.txt'
+            report_cv_results(random_search.cv_results_, fname)
+            io._upload_to_bucket(filename=fname, ext_filename=fname)
+            sys.exit()
+        else:
+            logging.info('Training...')
+            feed_dict = {model.X: X_train,
+                         model.y: y_train}
+
+            _, loss, state, pred = sess.run(
+                [model.train_op, model.loss, model.cell_final_state, model.pred],
+                feed_dict=feed_dict)
+
+            y = sess.run([model.y], feed_dict=feed_dict)[0]
+            logging.info("Step {} training loss: {:.4f}".format(train_step, loss))
+
+        # Metrics
+        feed_dict = {model.X: X_test,
+                     model.y: y_test}
+                     #model.cell_init_state: state}
+
+        val_loss, y_pred = sess.run(
+            [model.loss, model.y_pred],
+            feed_dict=feed_dict)
+
+        logging.info("Step {}: Training loss: {:.4f}, Validation loss: {:.4f}".format(train_step, loss, val_loss))
+
+        #print(y_pred)
+        #print(y_test)
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+        mae = mean_absolute_error(y_test, y_pred)
+
+        rmses.append(rmse)
+        maes.append(mae)
+        steps.append(train_step)
+
+        logging.info('RMSE: {}'.format(rmse))
+        logging.info('MAE: {}'.format(mae))
+
+        train_step += 1
+        # <-- while True:
+
+    #io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
+
+    try:
+        fname = options.output_path+'/learning_over_time.png'
+        metrics = [{'metrics':[{'values': rmses, 'label': 'RMSE'}],'y_label': 'RMSE'},
+                   {'metrics':[{'values': maes, 'label': 'MAE'}], 'y_label': 'MAE'}]
+        viz.plot_learning(metrics, fname)
+    except Exception as e:
+        logging.error(e)
+
+    error_data = {'steps': steps,
+                  'rmse': rmses,
+                  'mae': maes}
+    fname = '{}/training_time_validation_errors.csv'.format(options.output_path)
+    io.write_csv(error_data, filename=fname, ext_filename=fname)
 
 
-            data = bq.get_rows(start,
-                               end,
-                               loc_col='trainstation',
-                               project=options.project,
-                               dataset=options.feature_dataset,
-                               table=options.feature_table,
-                               parameters=all_param_names)
 
-            data = io.filter_train_type(labels_df=data,
-                                        train_types=['K','L'],
-                                        sum_types=True,
-                                        train_type_column='train_type',
-                                        location_column='trainstation',
-                                        time_column='time',
-                                        sum_columns=['delay'],
-                                        aggs=aggs)
 
-            data.sort_values(by=['time', 'trainstation'], inplace=True)
-            l_data = data.loc[:,meta_param_names + label_param_names]
-            f_data = data[meta_param_names + feature_param_names]
 
-            #print(l_data)
-            #print(f_data)
-
-        except ValueError as e:
-            f_data, l_data = [], []
-
-        if len(f_data) == 0 or len(l_data) == 0:
-            start = end
-            end = start + timedelta(days=options.day_step, hours=options.hour_step)
-            continue
-
-        # l_data = io.filter_train_type(labels_df=l_data,
-        #                               traintypes=[0,1],
-        #                               train_type_column='train_type',
-        #                               location_column='loc_id',
-        #                               sum_columns=['late_minutes','train_count','total_late_minutes'],
-        #                               sum_types=True)
-        f_data.rename(columns={'trainstation':'loc_name'}, inplace=True)
-        # l_data, f_data = io.filter_labels(l_data,
-        #                                   f_data,
-        #                                   location_column='loc_name',
-        #                                   uniq=True) #, invert=True)
-
-        logging.debug('Labels shape: {}'.format(l_data.shape))
-        logging.debug('Features shape: {}'.format(f_data.shape))
-        logging.info('Processing {} rows...'.format(len(f_data)))
-
-        assert l_data.shape[0] == f_data.shape[0]
-
-        target = l_data['delay'].astype(np.float32).values
-        features = f_data.drop(columns=['loc_name', 'time']).astype(np.float32).values
-        # logging.debug('Data types of features: {}'.format(f_data.dtypes))
-
-        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
-
-        # print(X_train[0:10])
-        # print(y_train[0:10])
-        n_samples, n_dims = X_train.shape
-        #    saver = tf.train.Saver()
-
-        # Select random mini-batch
-        def input_train_rf():
-            indices = np.random.choice(n_samples, options.batch_size)
-            X_batch, y_batch = X_train[indices], y_train[indices]
-            train_input_fn = tf.estimator.inputs.numpy_input_fn(x= X_batch,
-                                                                y= y_batch,
-                                                                shuffle=True)
-            x, y = train_input_fn()
-            return x, y
-
-        def input_test_rf():
-            indices = np.random.choice(len(X_test), options.batch_size)
-            X_batch, y_batch = X_test[indices], y_test[indices]
-            train_input_fn = tf.estimator.inputs.numpy_input_fn(x= X_batch,
-                                                                y= y_batch,
-                                                                shuffle=True)
-            x, y = train_input_fn()
-            return x, y
-
-        def input_train():
-            indices = np.random.choice(n_samples, options.batch_size)
-            X_batch, y_batch = X_train[indices], y_train[indices]
-            return X_batch, y_batch
-
-        def input_test():
-            indices = np.random.choice(len(X_test), options.batch_size)
-            X_batch, y_batch = X_test[indices], y_test[indices]
-            return X_batch, y_batch
-
-        print('Training')
-        print(model.train(input_fn=input_train_rf, steps=options.n_loops))
-        print('Evaluating')
-        model.evaluate(input_fn=input_test, steps=1)
-
-        start = end
-        end = start + timedelta(days=options.day_step, hours=options.hour_step)
-
-    model.export_savedmodel(
-        export_dir,
-        rf.serving_input_receiver_fn
-    )
-
-    export(
-        model,
-        export_dir,
-        rf.serving_input_receiver_fn
-    )
 
 if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--starttime', type=str, help='Start time of the classification data interval')
-    parser.add_argument('--endtime', type=str, help='End time of the classification data interval')
-    parser.add_argument('--save_path', type=str, default=None, help='Model save path and filename')
-    parser.add_argument('--model', type=str, default='rf', help='Model save path and filename')
-    parser.add_argument('--project', type=str, default='trains-197305', help='BigQuery project name')
-    parser.add_argument('--feature_dataset', type=str, default='trains_all_features', help='Dataset name for features')
-    parser.add_argument('--label_dataset', type=str, default='trains_labels', help='Dataset name for labels')
-    parser.add_argument('--feature_table', type=str, default='features', help='Table name for features')
-    parser.add_argument('--label_table', type=str, default='labels_passenger', help='Table name for labels')
-    parser.add_argument('--batch_size', type=int, default=100, help='Batch size for training')
-    parser.add_argument('--day_step', type=int, default=30, help='How many days are handled in one step')
-    parser.add_argument('--hour_step', type=int, default=0, help='How many hours are handled in one step')
 
-    #parser.add_argument('--stations_file', type=str, default=None, help='Stations file to rename stations from loc_id to station name')
-    parser.add_argument('--parameters_file', type=str, default='cnf/parameters_shorten.txt', help='Param conf filename')
-    parser.add_argument('--log_dir', type=str, default=None, help='Tensorboard log dir')
+    parser.add_argument('--config_filename', type=str, default=None, help='Configuration file name')
+    parser.add_argument('--config_name', type=str, default=None, help='Configuration file name')
     parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
-    parser.add_argument('--db_config_file',
-                        type=str,
-                        default=None,
-                        help='GS address for db config file (if none, ~/.mlfdbconfig is used)')
+
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',
                         help='options: DEBUG,INFO,WARNING,ERROR,CRITICAL')
-    parser.add_argument('--output_path', type=str, default=None, help='Path where visualizations are saved')
 
     options = parser.parse_args()
 
-    if options.save_path is None:
-        options.save_path = 'models/'+options.model+'/'+options.feature_dataset
-
-    if options.output_path is None:
-        options.output_path = 'results/'+options.model+'/'+options.feature_dataset
-
-    if options.log_dir is None:
-        options.log_dir = '/tmp/'+options.model+'/'+options.feature_dataset
-
-    if options.dev == 1: options.n_loops = 100
-    else: options.n_loops = 10000
+    _config.read(options)
 
     logging_level = {'DEBUG':logging.DEBUG,
                      'INFO':logging.INFO,
