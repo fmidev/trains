@@ -174,6 +174,8 @@ def main():
     viz = _viz.Viz()
 
     starttime, endtime = io.get_dates(options)
+    save_path = options.save_path+'/'+options.config_name
+
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
                                                                   starttime.strftime('%Y-%m-%d'),
                                                                   endtime.strftime('%Y-%m-%d')))
@@ -183,6 +185,20 @@ def main():
 
     # Initialise errors
     rmses, maes, steps = [], [], []
+
+    # Define model
+    model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr)
+
+    saver = tf.train.Saver()
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    summary_writer = tf.summary.FileWriter(options.log_dir, graph=tf.get_default_graph())
+    tf.summary.scalar('MSE', model.loss)
+    tf.summary.scalar('RMSE', model.rmse)
+    tf.summary.scalar('MAE', model.mae)
+    tf.summary.histogram('y_pred_hist', model.y_pred)
+    merged_summary_op = tf.summary.merge_all()
 
     logging.info('Reading data...')
     bq.set_params(starttime,
@@ -207,25 +223,16 @@ def main():
     data_train, data_test = train_test_split(data, test_size=0.33)
     X_test, y_test = extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
-    # Define model
+    # Batch size just for information
     batch_size = get_batch_size(data_train, options.pad_strategy, quantile=options.quantile)
     logging.info('Using batch size: {}'.format(batch_size))
-    model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr)
-
-    sess = tf.Session()
-    init = tf.global_variables_initializer()
-    sess.run(init)
 
     train_step = 0
     while True:
-        # i = bq.get_batch_num()
-        # data = bq.get_batch()
         X_train, y_train = extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
         if(len(X_train) < options.time_steps):
             break
-
-#        n_times, n_samples, n_dims = X_train.shape
 
         if options.cv:
             logging.info('Doing random search for hyper parameters...')
@@ -250,27 +257,23 @@ def main():
             io._upload_to_bucket(filename=fname, ext_filename=fname)
             sys.exit()
         else:
-            logging.info('Training...')
+            if train_step == 0:
+                logging.info('Training...')
             feed_dict = {model.X: X_train,
                          model.y: y_train}
 
-            _, loss, state, pred = sess.run(
-                [model.train_op, model.loss, model.cell_final_state, model.pred],
+            _, loss, pred = sess.run(
+                [model.train_op, model.loss, model.pred],
                 feed_dict=feed_dict)
-
-            y = sess.run([model.y], feed_dict=feed_dict)[0]
-            logging.info("Step {} training loss: {:.4f}".format(train_step, loss))
 
         # Metrics
         feed_dict = {model.X: X_test,
                      model.y: y_test}
                      #model.cell_init_state: state}
 
-        val_loss, y_pred = sess.run(
-            [model.loss, model.y_pred],
+        val_loss, y_pred, summary = sess.run(
+            [model.loss, model.y_pred, merged_summary_op],
             feed_dict=feed_dict)
-
-        logging.info("Step {}: Training loss: {:.4f}, Validation loss: {:.4f}".format(train_step, loss, val_loss))
 
         #print(y_pred)
         #print(y_test)
@@ -281,12 +284,20 @@ def main():
         maes.append(mae)
         steps.append(train_step)
 
-        logging.info('RMSE: {}'.format(rmse))
-        logging.info('MAE: {}'.format(mae))
+        summary_writer.add_summary(summary, train_step * batch_size)
+        if train_step%50 == 0:
+            logging.info("Step {}:".format(train_step))
+            logging.info("Training loss: {:.4f}".format(loss))
+            logging.info("Validation loss (MSE): {:.4f}".format(val_loss))
+            logging.info('Validation RMSE: {}'.format(rmse))
+            logging.info('Validation MAE: {}'.format(mae))
+            logging.info('................')
+            saver.save(sess, save_path)
 
         train_step += 1
         # <-- while True:
 
+    saver.save(sess, save_path)
     #io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
 
     try:
@@ -294,6 +305,7 @@ def main():
         metrics = [{'metrics':[{'values': rmses, 'label': 'RMSE'}],'y_label': 'RMSE'},
                    {'metrics':[{'values': maes, 'label': 'MAE'}], 'y_label': 'MAE'}]
         viz.plot_learning(metrics, fname)
+        io._upload_to_bucket(filename=fname, ext_filename=fname)
     except Exception as e:
         logging.error(e)
 
