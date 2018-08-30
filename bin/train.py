@@ -271,14 +271,14 @@ def main():
                      model.y: y_test}
                      #model.cell_init_state: state}
 
-        val_loss, y_pred, summary = sess.run(
-            [model.loss, model.y_pred, merged_summary_op],
+        val_loss, rmse, mae, y_pred, summary = sess.run(
+            [model.loss, model.rmse, model.mae, model.y_pred, merged_summary_op],
             feed_dict=feed_dict)
 
         #print(y_pred)
         #print(y_test)
-        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-        mae = mean_absolute_error(y_test, y_pred)
+        #rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+        #mae = mean_absolute_error(y_test, y_pred)
 
         rmses.append(rmse)
         maes.append(mae)
@@ -288,7 +288,7 @@ def main():
         if train_step%50 == 0:
             logging.info("Step {}:".format(train_step))
             logging.info("Training loss: {:.4f}".format(loss))
-            logging.info("Validation loss (MSE): {:.4f}".format(val_loss))
+            logging.info("Validation MSE: {:.4f}".format(val_loss))
             logging.info('Validation RMSE: {}'.format(rmse))
             logging.info('Validation MAE: {}'.format(mae))
             logging.info('................')
