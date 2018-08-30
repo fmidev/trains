@@ -197,7 +197,7 @@ services:
     ports:
       - "80:6006"
     image: tensorflow/tensorflow
-    command: tensorboard --logdir=/tmp/lr --host 0.0.0.0
+    command: tensorboard --logdir=/tmp/lstm --host 0.0.0.0
 #############
   pred:
     volumes:

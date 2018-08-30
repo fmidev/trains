@@ -60,6 +60,9 @@ class LSTM(object):
     def compute_loss(self):
         with tf.name_scope('loss'):
             self.loss = tf.reduce_mean(tf.squared_difference(tf.reshape(self.y, [-1], name='reshape_target'), tf.reshape(self.pred, [-1], name='reshape_pred')))
+            self.rmse = tf.sqrt(tf.reduce_mean(tf.squared_difference(tf.reshape(self.y, [-1], name='reshape_target'), tf.reshape(self.pred, [-1], name='reshape_pred'))))
+            self.mae = tf.reduce_mean(tf.losses.absolute_difference(tf.reshape(self.y, [-1], name='reshape_target'), tf.reshape(self.pred, [-1], name='reshape_pred')))
+
 
     @staticmethod
     def ms_error(labels, logits):
