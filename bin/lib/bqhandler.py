@@ -75,6 +75,7 @@ class BQHandler(object):
         """
         Get next batch
         """
+        logging.info('Batch {}...'.format(self.batch_num))
         offset = self.batch_num * self.batch_size
         sql = self._format_query(offset)
         self.batch_num += 1
