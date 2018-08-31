@@ -203,6 +203,7 @@ def main():
     logging.info('Reading data...')
     bq.set_params(starttime,
                   endtime,
+                  batch_size=5000000,
                   loc_col='trainstation',
                   project=options.project,
                   dataset=options.feature_dataset,
