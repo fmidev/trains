@@ -147,6 +147,8 @@ class IO:
     #
     # TRAINS
     #
+
+
     def get_train_stations(self, filename=None):
 
         """
@@ -686,4 +688,3 @@ class IO:
             res[name].append((values.time, values.lat, values.lon, float(pred.pop(0)), values.origintime))
 
         return res
-    

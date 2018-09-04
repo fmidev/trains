@@ -41,6 +41,16 @@ class IO(Manipulator):
             self.bucket_name = gs_bucket
             self.gs = True
 
+    def _upload_dir_to_bucket(self, path, ext_path):
+        """
+        Upload all files from folder to bucket
+        """
+        if self.s3:
+            raise ValueError('S3 not implemented')
+        if self.gs:
+            for file in os.listdir(path):
+                self._upload_to_bucket(path+'/'+file, ext_path+'/'+file)
+
     def _upload_to_bucket(self, filename, ext_filename):
         """
         Upload file to bucket if bucket is set and ext_filename is not None
@@ -59,6 +69,27 @@ class IO(Manipulator):
                 logging.info('Uploaded to {}'.format(ext_filename))
             except:
                 logging.warning('Uploading file to bucket failed')
+
+    def _download_dir_from_bucket(self, ext_path, local_path, force=False):
+        """
+        Download all files from bucket and save them to 'local_path'
+        """
+        if os.path.exists(local_path) and not force:
+            logging.info('Path {} already exists. Not overwriting...'.format(local_path))
+            return
+        if os.path.exists(local_path) and force:
+            logging.info('Path {} already exists. Overwriting...'.format(local_path))
+
+        if self.s3:
+            raise ValueError('S3 not implemented')
+        if self.gs:
+            storage_client = storage.Client()
+            bucket = storage_client.get_bucket(self.bucket_name)
+            blobs = bucket.list_blobs(prefix=ext_path)
+
+            for blob in blobs:
+                local_name = blob.name.replace(ext_path, local_path)
+                self._download_from_bucket(blob.name, local_name, force)
 
     def _download_from_bucket(self, ext_filename, local_filename, force=False):
         """

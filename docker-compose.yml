@@ -158,8 +158,7 @@ services:
 
 
 
-
-#############
+############
   vizperf:
     volumes:
       - ~:/root:ro
@@ -169,18 +168,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/viz_performance.py --logging_level ${LOGGING:-INFO} --feature_dataset ${FEATURE_DATASET:-trains_1y_dev} --model_path ${MODEL_PATH:-models/trains_1y_dev/serving/1530189858} --stations TKL,SAV #,VS
-############
-  vizperf_scikit:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/lr.ini} --config_name ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO} #--stations PSL,OL #,VS
+    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/lr.ini} --config_name ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO} --stations PSL,OL #,VS
 #############
   vis:
     volumes:

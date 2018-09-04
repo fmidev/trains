@@ -46,123 +46,7 @@ def report_cv_results(results, filename=None, n_top=3):
 
     logging.info(res)
 
-def get_batch_size(data, pad_strategy='pad', quantile=None):
-    """
-    Get batch size based on pad_strategy. See extract_batch docs for more info.
-    """
-    if pad_strategy == 'sample':
-        return min(data.groupby(['time']).size())
-    elif pad_strategy == 'pad':
-        return max(data.groupby(['time']).size())
-    elif pad_strategy == 'drop':
-        #logging.debug(data.groupby(['time']).size())
-        return int(data.groupby(['time']).size().quantile(quantile))
 
-def pad_along_axis(a, target_length, constant_values=-99, axis=0):
-    """
-    Pad along given axis
-    """
-    pad_size = target_length - a.shape[axis]
-    axis_nb = len(a.shape)
-
-    if pad_size < 0:
-        return a
-
-    npad = [(0, 0) for x in range(axis_nb)]
-    npad[axis] = (0, pad_size)
-
-    b = np.pad(a, pad_width=npad, mode='constant', constant_values=constant_values)
-
-    return b
-
-def extract_batch(data, n_timesteps, batch_num=0, batch_size=None, pad_strategy='pad', quantile=None):
-    """
-    Extract and/or preprocess batch from data.
-
-    data : pd.DataFrame
-           Data
-    n_timesteps : int
-                  Number of timesteps to be used in LSTM. If <0 all timesteps are used-
-    batch_num : int
-                Batch number, default 0
-    batch_size : int or None
-                 If None, batch size is got based on pad_strategy.
-                 If <0, all valid values are returned (used specially for test data)
-                 If >0, given batch size is used.
-    pad_strategy : str
-                   - If 'pad', largest timestep (with most stations) is chosen
-                   from the data and other timesteps are padded with -99
-                   - If 'sample', smallest timestep is chosen and other timesteps
-                   are sampled to match smallest one.
-                   - If 'drop', batch_size is chosen to to match options.quantile
-                   value. If for example options.quantile=0.3 70 percent of timesteps
-                   are taken into account.
-    quantile : float or None
-               Used to drop given fraction of smaller timesteps from data if
-               pad_strategy='drop'
-
-    return : (Values shape: (n_timesteps, batch_size, n_features), Labels shape (n_timesteps, batch_size))
-    """
-    # Detect batch size
-    if batch_size is None:
-        batch_size = get_batch_size(data, pad_strategy, quantile)
-    elif batch_size < 0:
-        batch_size = len(data)
-
-    # If pad_strategy is drop, drop timesteps with too few stations
-    if pad_strategy == 'drop':
-        t_size = data.groupby(['time']).size()
-        t_size = t_size[t_size >= batch_size].index.values
-        data = data[data.time.isin(t_size)]
-
-    all_times = data.time.unique()
-    stations = data.trainstation.unique()
-
-    if n_timesteps < 0:
-        n_timesteps = len(all_times)
-
-    # Pick times for the batch
-    start = batch_num*n_timesteps
-    end = start + n_timesteps
-    times = all_times[start:end]
-
-    values = []
-    labels = []
-
-    # Go through times
-    for t in times:
-        # Pick data for current time
-        timestep_values = data[data.loc[:,'time'] == t]
-
-        # If pad_strategy is drop and timestep is too small, ignore it and continue
-        if pad_strategy == 'drop' and batch_size > len(timestep_values):
-            continue
-
-        # If pad_strategy is sample or drop, sample data to match desired batch_size
-        if pad_strategy in ['sample','drop'] and batch_size < len(timestep_values):
-            timestep_values = timestep_values.sample(batch_size)
-
-        # pd dataframe to np array
-        timestamp_values = timestep_values.drop(columns=['time', 'trainstation', 'delay', 'train_type']).astype(np.float32).values
-        label_values = timestep_values.loc[:,'delay'].astype(np.float32).values
-
-        # if pad_strategy is pad and timestep is too small, pad it with -99
-        if pad_strategy == 'pad' and batch_size > len(timestamp_values):
-            timestamp_values = pad_along_axis(timestamp_values, batch_size, -99)
-            label_values = pad_along_axis(label_values, batch_size, -99)
-
-        values.append(timestamp_values)
-        labels.append(label_values)
-
-    values = np.array(values)
-    labels = np.array(labels)
-    #values = np.rollaxis(np.array(values), 1)
-    #labels = np.reshape(np.rollaxis(np.array(labels), 1), (batch_size, n_timesteps, 1))
-
-    logging.debug('Values shape: {}'.format(values.shape))
-    logging.debug('Labels shape: {}'.format(labels.shape))
-
-    return values, labels
 
 def main():
     """
@@ -174,7 +58,7 @@ def main():
     viz = _viz.Viz()
 
     starttime, endtime = io.get_dates(options)
-    save_path = options.save_path+'/'+options.config_name
+    #save_path = options.save_path+'/'+options.config_name
 
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
                                                                   starttime.strftime('%Y-%m-%d'),
@@ -184,7 +68,7 @@ def main():
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
     # Initialise errors
-    rmses, maes, steps = [], [], []
+    rmses, mses, maes, steps, train_mse = [], [], [], [], []
 
     # Define model
     model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr)
@@ -194,9 +78,10 @@ def main():
     init = tf.global_variables_initializer()
     sess.run(init)
     summary_writer = tf.summary.FileWriter(options.log_dir, graph=tf.get_default_graph())
-    tf.summary.scalar('MSE', model.loss)
-    tf.summary.scalar('RMSE', model.rmse)
-    tf.summary.scalar('MAE', model.mae)
+    tf.summary.scalar('Training MSE', model.loss)
+    tf.summary.scalar('Validation MSE', model.mse)
+    tf.summary.scalar('Validation RMSE', model.rmse)
+    tf.summary.scalar('Validation MAE', model.mae)
     tf.summary.histogram('y_pred_hist', model.y_pred)
     merged_summary_op = tf.summary.merge_all()
 
@@ -222,15 +107,15 @@ def main():
     data.sort_values(by=['time', 'trainstation'], inplace=True)
 
     data_train, data_test = train_test_split(data, test_size=0.33)
-    X_test, y_test = extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
+    X_test, y_test = io.extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
     # Batch size just for information
-    batch_size = get_batch_size(data_train, options.pad_strategy, quantile=options.quantile)
+    batch_size = io.get_batch_size(data_train, options.pad_strategy, quantile=options.quantile)
     logging.info('Using batch size: {}'.format(batch_size))
 
     train_step = 0
     while True:
-        X_train, y_train = extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
+        X_train, y_train = io.extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
         if(len(X_train) < options.time_steps):
             break
@@ -262,7 +147,6 @@ def main():
                 logging.info('Training...')
             feed_dict = {model.X: X_train,
                          model.y: y_train}
-
             _, loss, pred = sess.run(
                 [model.train_op, model.loss, model.pred],
                 feed_dict=feed_dict)
@@ -272,8 +156,8 @@ def main():
                      model.y: y_test}
                      #model.cell_init_state: state}
 
-        val_loss, rmse, mae, y_pred, summary = sess.run(
-            [model.loss, model.rmse, model.mae, model.y_pred, merged_summary_op],
+        val_loss, rmse, mse, mae, y_pred, summary = sess.run(
+            [model.loss, model.rmse, model.mse, model.mae, model.y_pred, merged_summary_op],
             feed_dict=feed_dict)
 
         #print(y_pred)
@@ -281,6 +165,8 @@ def main():
         #rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         #mae = mean_absolute_error(y_test, y_pred)
 
+        train_mse.append(loss)
+        mses.append(mse)
         rmses.append(rmse)
         maes.append(mae)
         steps.append(train_step)
@@ -290,29 +176,33 @@ def main():
             logging.info("Step {}:".format(train_step))
             logging.info("Training loss: {:.4f}".format(loss))
             logging.info("Validation MSE: {:.4f}".format(val_loss))
+            logging.info('Validation MSE: {}'.format(mse))
             logging.info('Validation RMSE: {}'.format(rmse))
             logging.info('Validation MAE: {}'.format(mae))
             logging.info('................')
-            saver.save(sess, save_path)
+            saver.save(sess, options.save_file)
 
         train_step += 1
         # <-- while True:
 
-    saver.save(sess, save_path)
-    #io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
+    saver.save(sess, options.save_file)
+    io._upload_dir_to_bucket(options.save_path, options.save_path)
 
     try:
         fname = options.output_path+'/learning_over_time.png'
-        metrics = [{'metrics':[{'values': rmses, 'label': 'RMSE'}],'y_label': 'RMSE'},
-                   {'metrics':[{'values': maes, 'label': 'MAE'}], 'y_label': 'MAE'}]
+        metrics = [{'metrics':[{'values': mses, 'label': 'Validation MSE'}, {'values': train_mse, 'label': 'Train MSE'}],'y_label': 'MSE'},
+                   {'metrics':[{'values': rmses, 'label': 'Validation RMSE'}],'y_label': 'RMSE'},
+                   {'metrics':[{'values': maes, 'label': 'Validation MAE'}], 'y_label': 'MAE'}]
         viz.plot_learning(metrics, fname)
         io._upload_to_bucket(filename=fname, ext_filename=fname)
     except Exception as e:
         logging.error(e)
 
     error_data = {'steps': steps,
+                  'mse' : mses,
                   'rmse': rmses,
-                  'mae': maes}
+                  'mae': maes,
+                  'train_mse': train_mse}
     fname = '{}/training_time_validation_errors.csv'.format(options.output_path)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
 
