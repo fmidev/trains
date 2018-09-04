@@ -7,6 +7,7 @@ from collections import OrderedDict
 
 import math
 import numpy as np
+import pandas as pd
 
 import tensorflow as tf
 from tensorflow.python.estimator.export import export
@@ -39,11 +40,24 @@ def main():
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
     # Load model
-    if options.save_file is not None:
+    if options.tf:
+        io._download_dir_from_bucket(options.save_path, options.save_path, force=True)
+        sess = tf.Session()
+        saver = tf.train.import_meta_graph(options.save_file+'.meta')
+        saver.restore(sess, tf.train.latest_checkpoint(options.save_path))
+        graph = tf.get_default_graph()
+
+        # for i in tf.get_default_graph().get_operations():
+        #     print(i.name)
+        # sys.exit()
+        X = graph.get_tensor_by_name("inputs/X:0")
+        op_y_pred = graph.get_tensor_by_name("out_hidden/y_pred/y_pred:0")
+    else:
         io._download_from_bucket(options.save_file, options.save_file)
         predictor = io.load_scikit_model(options.save_file)
-    else:
-        predictor = tf.contrib.predictor.from_saved_model(options.model_path)
+
+#        print(op_y_pred)
+#    sys.exit()
 
     # Init error dicts
     avg_delay = {}
@@ -87,36 +101,63 @@ def main():
                                     sum_columns=['delay'],
                                     aggs=aggs)
 
-        data.sort_values(by=['time', 'trainstation'], inplace=True)
-
-        # Pick feature and label data from all data
-        l_data = data.loc[:,options.meta_params + options.label_params]
-        f_data = data.loc[:,options.meta_params + options.feature_params]
-
-        # Pick times for creating error time series
-        times = data.loc[:,'time']
-
-        logging.debug('Labels shape: {}'.format(l_data.shape))
-        logging.debug('Features shape: {}'.format(f_data.shape))
-        logging.info('Processing {} rows...'.format(len(f_data)))
-
         if len(data) == 0:
             continue
 
-        assert l_data.shape[0] == f_data.shape[0]
+        data.sort_values(by=['time', 'trainstation'], inplace=True)
+        logging.info('Processing {} rows...'.format(len(data)))
 
+        # Pick times for creating error time series
+        times = data.loc[:,'time']
         station_count += 1
 
-        target = l_data['delay'].astype(np.float64).values.ravel()
-        features = f_data.drop(columns=['trainstation', 'time']).astype(np.float64).values
+        if not options.tf:
+            # Pick feature and label data from all data
+            l_data = data.loc[:,options.meta_params + options.label_params]
+            f_data = data.loc[:,options.meta_params + options.feature_params]
+
+            assert l_data.shape[0] == f_data.shape[0]
+
+            target = l_data['delay'].astype(np.float64).values.ravel()
+            features = f_data.drop(columns=['trainstation', 'time']).astype(np.float64).values
 
         # Run prediction
-        if options.save_file is not None:
-            y_pred = predictor.predict(features)
-        else:
-            y_pred = predictor({'X': features})['pred_output'].ravel()
+        if options.tf:
+            y_pred, target = [], []
+            logging.info('Predicting... ')
+            start = 0
+            end = options.time_steps
+            first = True
+            while end <= len(times):
+                input_batch, target_batch = io.extract_batch(data,
+                                                             options.time_steps,
+                                                             batch_size=-1,
+                                                             pad_strategy=options.pad_strategy,
+                                                             quantile=options.quantile,
+                                                             start=start,
+                                                             end=end)
+                if len(input_batch) < options.time_steps:
+                    break
 
-        logging.info('Prediction has {} negative values'.format(np.sum(y_pred < 0)))
+                feed_dict={X: input_batch}
+                y_pred_batch = sess.run(op_y_pred, feed_dict=feed_dict).ravel()
+                print(y_pred_batch)
+                if first:
+                    y_pred = list(y_pred_batch)
+                    target = list(target_batch.ravel())
+                    first = False
+                else:
+                    y_pred.append(y_pred_batch[-1])
+                    target.append(target_batch[-1])
+
+                start += 1
+                end += 1
+
+                if end%100 == 0:
+                    logging.info('...step {}/{}'.format(end, len(times)))
+
+        else:
+            y_pred = predictor.predict(features)
 
         # Create timeseries of predicted and happended delay
         i = 0
@@ -209,19 +250,10 @@ if __name__=='__main__':
     parser.add_argument('--config_name', type=str, default=None, help='Configuration file name')
     parser.add_argument('--starttime', type=str, default='2011-02-01', help='Start time of the classification data interval')
     parser.add_argument('--endtime', type=str, default='2017-03-01', help='End time of the classification data interval')
-    # parser.add_argument('--starttime', type=str, default='2013-06-01', help='Start time of the classification data interval')
-    # parser.add_argument('--endtime', type=str, default='2013-07-01', help='End time of the classification data interval')
-    #parser.add_argument('--save_path', type=str, default=None, help='Output path')
     parser.add_argument('--model_path', type=str, default=None, help='Path of TensorFlow Estimator file')
     parser.add_argument('--model_file', type=str, default=None, help='Path and filename of SciKit model file. If this is given, model_path is ignored.')
-    #parser.add_argument('--project', type=str, default='trains-197305', help='BigQuery project name')
-    #parser.add_argument('--feature_dataset', type=str, default='trains_testset', help='Dataset name for features')
-    #parser.add_argument('--label_dataset', type=str, default='trains_labels', help='Dataset name for labels')
-    #parser.add_argument('--feature_table', type=str, default='features_1', help='Table name for features')
-    #parser.add_argument('--label_table', type=str, default='labels_passenger', help='Table name for labels')
     parser.add_argument('--stations', type=str, default=None, help='List of train stations separated by comma')
     parser.add_argument('--stations_file', type=str, default='cnf/stations.json', help='Stations file, list of stations to process')
-    #parser.add_argument('--parameters_file', type=str, default='cnf/parameters_shorten.txt', help='Param conf filename')
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',
@@ -231,9 +263,6 @@ if __name__=='__main__':
     options = parser.parse_args()
 
     _config.read(options)
-
-    # if options.save_path is None:
-    #     options.save_path = 'visualizations/'+options.feature_dataset
 
     logging_level = {'DEBUG':logging.DEBUG,
                      'INFO':logging.INFO,

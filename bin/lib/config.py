@@ -74,6 +74,7 @@ def read(options):
         _bval('impute')
         _intval('n_loops')
         _intval('batch_size')
+        _bval('tf')
 
         # linear regression
         _fval('alpha')
@@ -103,7 +104,7 @@ def read(options):
         _intval('cell_size')
         _fval('lr')
         _intval('n_hidden')
-        _fval('quantile')  
+        _fval('quantile')
 
         # kmeans
         _bval('kmeans')

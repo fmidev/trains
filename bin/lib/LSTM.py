@@ -41,7 +41,7 @@ class LSTM(object):
         self.l_in_y = tf.reshape(l_in_y, [-1, self.n_steps, self.n_hidden], name='2_3D')
 
     def add_cell(self):
-        lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden, forget_bias=1.0, state_is_tuple=True)
+        lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden, state_is_tuple=True)
         with tf.name_scope('initial_state'):
             self.cell_outputs, self.cell_final_state = tf.nn.dynamic_rnn(lstm_cell,
                                                                          self.l_in_y,
@@ -53,15 +53,19 @@ class LSTM(object):
         W_out = self._weight_variable([self.n_hidden, self.output_size])
         b_out = self._bias_variable([self.output_size, ])
         # shape = (batch * steps, output_size)
-        with tf.name_scope('y_pred'):
+        with tf.name_scope('pred'):
             self.pred = tf.matmul(l_out_x, W_out) + b_out
-            self.y_pred = tf.cast(tf.rint(tf.reshape(self.pred, [self.n_steps,-1], name='reshaped_pred')), tf.uint8)
+        with tf.name_scope('y_pred'):
+            self.y_pred = tf.cast(tf.rint(tf.reshape(self.pred, [self.n_steps,-1], name='reshaped_pred')), tf.uint8, name='y_pred')
 
     def compute_loss(self):
         with tf.name_scope('loss'):
-            self.loss = tf.reduce_mean(tf.squared_difference(tf.reshape(self.y, [-1], name='reshape_target'), tf.reshape(self.pred, [-1], name='reshape_pred')))
-            self.rmse = tf.sqrt(tf.reduce_mean(tf.squared_difference(tf.reshape(self.y, [-1], name='reshape_target'), tf.reshape(self.pred, [-1], name='reshape_pred'))))
-            self.mae = tf.reduce_mean(tf.losses.absolute_difference(tf.reshape(self.y, [-1], name='reshape_target'), tf.reshape(self.pred, [-1], name='reshape_pred')))
+            reshape_target = tf.reshape(self.y, [-1], name='reshape_target')
+            reshape_pred = tf.reshape(self.pred, [-1], name='reshape_pred')
+            self.loss = tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred))
+            self.rmse = tf.sqrt(tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred)))
+            self.mse = tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred))
+            self.mae = tf.reduce_mean(tf.losses.absolute_difference(reshape_target, reshape_pred))
 
 
     @staticmethod

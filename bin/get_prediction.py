@@ -15,8 +15,9 @@ import multiprocessing
 from io import StringIO
 import pandas as pd
 
-from mlfdb import mlfdb
-import lib.io_pred
+# from mlfdb import mlfdb
+# import lib.io
+import lib.manipulator
 from lib import dbhandler as _db
 
 def get_forecasts(args):
@@ -48,14 +49,15 @@ def main():
     Get forecasted delay for every station
     """
 
-    io = lib.io_pred.IO()
+    #io = lib.io.IO()
+    io = lib.manipulator.Manipulator()
 
     params, _ = io.read_parameters(options.parameters_filename)
     params.append('origintime')
     stations = io.get_train_stations(filename=options.stations_filename)
 
     max_count = 5000
-    if options.dev == 1: max_count=1
+    if options.dev == 1: max_count=2
 
     latlons = []
     names = {}
@@ -82,15 +84,46 @@ def main():
     data = get_forecasts(args)
     logging.info('Calculating precipitation sums...')
     data = io._calc_prec_sums(data, prec_column='Precipitation1h').fillna(-99)
+
+    # Drop precipitation sums if they are not needed
+    if options.prec3h == 0:
+        data.drop(columns=['3hsum'], inplace=True)
+    if options.prec6h == 0:
+        data.drop(columns=['6hsum'], inplace=True)
+
     logging.info('Data shape: {}'.format(data.shape))
 
-    files = io.df_to_serving_file(data)
+    # files = io.df_to_serving_file(data)
+    # result = io.predict_gcloud_ml('trains_lr',
+    #                               'tiny_subset_10',
+    #                               files,
+    #                               data,
+    #                               names)
+    # print(result)
 
-    result = io.predict_gcloud_ml('trains_lr',
-                                  'tiny_subset_10',
-                                  files,
-                                  data,
-                                  names)
+    tf.reset_default_graph()
+    saver = tf.train.Saver()
+    sess = tf.Session()
+    saver.restore(sess, "/tmp/model.ckpt")
+    #logging.info("Model loaded from {}.".format())
+
+
+    model = io.load_scikit_model(options.model_file)
+    values = data.drop(columns=['time', 'place', 'origintime']).values
+
+    result = {}
+    for latlon, name in names.items():
+        meta = data.loc[(data['place'] == latlon)].loc[:,['time', 'lat', 'lon', 'origintime']]
+        values = data.loc[(data['place'] == latlon)].drop(columns=['time', 'place', 'origintime']).values
+        pred = model.predict(values)
+        i = 0
+        for val in pred:
+            values = meta.iloc[i]
+            if name not in result:
+                result[name] = []
+            result[name].append((int(values.time), values.lat, values.lon, int(val), int(values.origintime)))
+            i += 1
+
     logging.info('Got predictions for {} stations. First station has {} values.'.format(len(result), len(next(iter(result.values())))))
 
     if options.dev == 0:
@@ -99,10 +132,10 @@ def main():
         db = _db.DBHandler()
         db.insert_forecasts(result)
 
-        # Clean db
-        logging.info('Cleaning db...')
-        tolerance = timedelta(days=2)
-        db.clean_forecasts(tolerance)
+        # Clean db: do not clean db while developing
+        # logging.info('Cleaning db...')
+        # tolerance = timedelta(days=2)
+        # db.clean_forecasts(tolerance)
     else:
         logging.info('Results are: {}'.format(result))
 
@@ -115,10 +148,26 @@ if __name__=='__main__':
                         type=str,
                         default='cnf/stations.json',
                         help='Stations file name')
+    parser.add_argument('--model_file',
+                        type=str,
+                        default=None,
+                        help='Path and filename of SciKit model file.')
     parser.add_argument('--parameters_filename',
                         type=str,
                         default='cnf/forecast_parameters_shorten.txt',
                         help='Parameters file name')
+    parser.add_argument('--prec3h',
+                        type=int,
+                        default=1,
+                        help='Calculate precipitation 3 hour')
+    parser.add_argument('--prec6h',
+                        type=int,
+                        default=1,
+                        help='Calculate precipitation 6 hour')
+    parser.add_argument('--flashcount',
+                        type=int,
+                        default=1,
+                        help='Calculate flashcount')
     parser.add_argument('--dev',
                         type=int,
                         default=0,

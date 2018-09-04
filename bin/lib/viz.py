@@ -278,6 +278,7 @@ class Viz:
                       x_label="Iterations", y_label="RMSE"):
 
         dashes = ['--', '-', '.', '-o-']
+        colors = ['brown', 'blue', 'red']
         plt.clf()
         fig = plt.figure(figsize=(26,10))
         #fig, ax1 = plt.subplots(figsize=(26,10))
@@ -294,10 +295,11 @@ class Viz:
             j=0
             for metric in plot_data['metrics']:
                 dash = dashes[j%len(dashes)]
-
+                color = colors[j%len(colors)]
                 ax.plot(np.arange(len(metric['values'])),
                         metric['values'],
-                        c="#27ae61",
+                        c=color,
+                        linestyle=dash,
                         label=metric['label'])
                 j += 1
 

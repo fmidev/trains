@@ -25,6 +25,7 @@ class BQHandler(object):
         self.parameters = None
         self.locations = None
         self.order = None
+        self.batch_size = None
 
     def set_params(self,
                    starttime,
