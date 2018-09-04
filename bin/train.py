@@ -71,19 +71,21 @@ def main():
     rmses, mses, maes, steps, train_mse = [], [], [], [], []
 
     # Define model
-    model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr)
+    model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr, options.p_drop)
 
     saver = tf.train.Saver()
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
     summary_writer = tf.summary.FileWriter(options.log_dir, graph=tf.get_default_graph())
-    tf.summary.scalar('Training MSE', model.loss)
-    tf.summary.scalar('Validation MSE', model.mse)
-    tf.summary.scalar('Validation RMSE', model.rmse)
-    tf.summary.scalar('Validation MAE', model.mae)
+
+    #tf.summary.scalar('Training MSE', model.loss)
+    tf.summary.scalar('Validation_MSE', model.mse)
+    tf.summary.scalar('Validation_RMSE', model.rmse)
+    tf.summary.scalar('Validation_MAE', model.mae)
     tf.summary.histogram('y_pred_hist', model.y_pred)
     merged_summary_op = tf.summary.merge_all()
+    train_summary_op = tf.summary.scalar('Training_MSE', model.loss)
 
     logging.info('Reading data...')
     bq.set_params(starttime,
@@ -147,9 +149,11 @@ def main():
                 logging.info('Training...')
             feed_dict = {model.X: X_train,
                          model.y: y_train}
-            _, loss, pred = sess.run(
-                [model.train_op, model.loss, model.pred],
+            _, loss, train_summary = sess.run(
+                [model.train_op, model.loss, train_summary_op],
                 feed_dict=feed_dict)
+
+            summary_writer.add_summary(train_summary, train_step * batch_size)
 
         # Metrics
         feed_dict = {model.X: X_test,
@@ -176,7 +180,6 @@ def main():
             logging.info("Step {}:".format(train_step))
             logging.info("Training loss: {:.4f}".format(loss))
             logging.info("Validation MSE: {:.4f}".format(val_loss))
-            logging.info('Validation MSE: {}'.format(mse))
             logging.info('Validation RMSE: {}'.format(rmse))
             logging.info('Validation MAE: {}'.format(mae))
             logging.info('................')
