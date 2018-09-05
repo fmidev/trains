@@ -182,9 +182,11 @@ class Manipulator:
             n_timesteps = len(all_times)
 
         # Pick times for the batch
-        if(start is None and end is None):
+        if start is None:
             start = batch_num*n_timesteps
+        if end is None:
             end = start + n_timesteps
+            
         times = all_times[start:end]
 
         values = []
