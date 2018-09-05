@@ -53,12 +53,12 @@ class LSTM(object):
     def add_output_layer(self):
         # shape = (batch * steps, n_hidden)
         l_out_x = tf.reshape(self.cell_outputs, [-1, self.n_hidden], name='2_2D')
-        l_out_x_drop = tf.nn.dropout(l_out_x, self.p_drop)
+        #l_out_x_drop = tf.nn.dropout(l_out_x, self.p_drop)
         W_out = self._weight_variable([self.n_hidden, self.output_size])
         b_out = self._bias_variable([self.output_size, ])
         # shape = (batch * steps, output_size)
         with tf.name_scope('pred'):
-            self.pred = tf.matmul(l_out_x_drop, W_out) + b_out
+            self.pred = tf.matmul(l_out_x, W_out) + b_out
         with tf.name_scope('y_pred'):
             self.y_pred = tf.cast(tf.rint(tf.reshape(self.pred, [self.n_steps,-1], name='reshaped_pred')), tf.uint8, name='y_pred')
 
