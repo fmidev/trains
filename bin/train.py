@@ -124,8 +124,10 @@ def main():
     logging.info('Using batch size: {}'.format(batch_size))
 
     train_step = 0
+    start = 0
     while True:
-        X_train, y_train = io.extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
+        #X_train, y_train = io.extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
+        X_train, y_train = io.extract_batch(data_train, options.time_steps, start=start, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
         if(len(X_train) < options.time_steps):
             break
@@ -194,6 +196,7 @@ def main():
             saver.save(sess, options.save_file)
 
         train_step += 1
+        start += 1
         # <-- while True:
 
     saver.save(sess, options.save_file)
