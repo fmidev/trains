@@ -66,7 +66,8 @@ class LSTM(object):
         with tf.name_scope('loss'):
             reshape_target = tf.reshape(self.y, [-1], name='reshape_target')
             reshape_pred = tf.reshape(self.pred, [-1], name='reshape_pred')
-            self.loss = tf.square(tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred)))
+            # self.loss = tf.square(tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred)))
+            self.loss = tf.pow(tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred)), 3)
             self.rmse = tf.sqrt(tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred)))
             self.mse = tf.square(tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred)))
             self.mae = tf.reduce_mean(tf.losses.absolute_difference(reshape_target, reshape_pred))
