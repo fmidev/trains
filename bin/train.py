@@ -11,6 +11,7 @@ from configparser import ConfigParser
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
@@ -107,6 +108,13 @@ def main():
                                 sum_columns=['delay'],
                                 aggs=aggs)
     data.sort_values(by=['time', 'trainstation'], inplace=True)
+
+    if options.normalize:
+        logging.info('Normalizing data...')
+        scaler = StandardScaler()
+        non_scaled_data = data.loc[:,options.meta_params+ options.label_params]
+        scaled_features = pd.DataFrame(scaler.fit_transform(data.loc[:, options.feature_params]))
+        data = pd.concat([non_scaled_data, scaled_features], axis=1)
 
     data_train, data_test = train_test_split(data, test_size=0.33)
     X_test, y_test = io.extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
