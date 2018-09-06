@@ -133,8 +133,11 @@ def main():
     train_step = 0
     start = 0
     while True:
-        #X_train, y_train = io.extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
-        X_train, y_train = io.extract_batch(data_train, options.time_steps, start=start, pad_strategy=options.pad_strategy, quantile=options.quantile)
+        # If slow is set, go forward one time step at time, else proceed whole batch size
+        if options.slow:
+            X_train, y_train = io.extract_batch(data_train, options.time_steps, start=start, pad_strategy=options.pad_strategy, quantile=options.quantile)
+        else:
+            X_train, y_train = io.extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
         if(len(X_train) < options.time_steps):
             break
