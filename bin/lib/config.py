@@ -106,6 +106,7 @@ def read(options):
         _intval('n_hidden')
         _fval('quantile')
         _fval('p_drop')
+        _bval('slow')
 
         # kmeans
         _bval('kmeans')
