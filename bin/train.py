@@ -111,10 +111,17 @@ def main():
 
     if options.normalize:
         logging.info('Normalizing data...')
-        scaler = StandardScaler()
-        non_scaled_data = data.loc[:,options.meta_params+ options.label_params]
-        scaled_features = pd.DataFrame(scaler.fit_transform(data.loc[:, options.feature_params]))
-        data = pd.concat([non_scaled_data, scaled_features], axis=1)
+        xscaler = StandardScaler()
+        yscaler = StandardScaler()
+
+        non_scaled_data = data.loc[:,options.meta_params+ ['train_type']]
+        labels = data.loc[:, 'delay'].values.reshape((-1, 1))
+
+        yscaler.fit(labels)
+        scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
+        scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:, options.feature_params]))
+
+        data = pd.concat([non_scaled_data, scaled_features, scaled_labels], axis=1)
 
     data_train, data_test = train_test_split(data, test_size=0.33)
     X_test, y_test = io.extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
@@ -174,9 +181,11 @@ def main():
             [model.loss, model.rmse, model.mse, model.mae, model.y_pred, merged_summary_op],
             feed_dict=feed_dict)
 
-        #print(y_pred)
-        #print(y_test)
-        #rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+        # print('y_pred:')
+        # print(np.rint(yscaler.inverse_transform(y_pred)).astype(int))
+        # print('y_test:')
+        # print(np.rint(yscaler.inverse_transform(y_test)).astype(int))
+        # #rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         #mae = mean_absolute_error(y_test, y_pred)
 
         train_mse.append(loss)
@@ -200,6 +209,9 @@ def main():
         # <-- while True:
 
     saver.save(sess, options.save_file)
+    if options.normalize:
+        fname = options.save_path+'/yscaler.pkl'
+        io.save_scikit_model(yscaler, fname, fname)
     io._upload_dir_to_bucket(options.save_path, options.save_path)
 
     try:
