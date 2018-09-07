@@ -123,6 +123,11 @@ def main():
 
         # Run prediction
         if options.tf:
+            if options.normalize:
+                fname=options.save_path+'/yscaler.pkl'
+                io._download_from_bucket(fname, fname, force=True)
+                yscaler = io.load_scikit_model(fname)
+
             y_pred, target = [], []
             logging.info('Predicting... ')
             start = 0
@@ -141,6 +146,9 @@ def main():
 
                 feed_dict={X: input_batch}
                 y_pred_batch = sess.run(op_y_pred, feed_dict=feed_dict).ravel()
+                if options.normalize:
+                    y_pred_batch = yscaler.inverse_transform(y_pred_batch)
+                    
                 print(y_pred_batch)
                 if first:
                     y_pred = list(y_pred_batch)

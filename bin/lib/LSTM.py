@@ -69,11 +69,14 @@ class LSTM(object):
             reshape_target = tf.reshape(self.y, [-1], name='reshape_target')
             reshape_pred = tf.reshape(self.pred, [-1], name='reshape_pred')
 
+            # MSE
+            self.loss = tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred))
+
             # MSE^2
             self.loss = tf.reduce_mean(tf.square(tf.squared_difference(reshape_target, reshape_pred)))
 
             # MSE^3
-            #self.loss = tf.pow(tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred)), 3)
+            #self.loss = tf.reduce_mean(tf.pow(tf.squared_difference(reshape_target, reshape_pred), 3))
 
             # KLD
             #tf.contrib.distributions.
