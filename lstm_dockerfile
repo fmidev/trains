@@ -1,8 +1,4 @@
-FROM tervo/ml:cpu
-ADD bin /a/bin
-ADD cnf /a/cnf
-
-ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+FROM tervo/ml
 
 RUN apt-get install locales
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -12,8 +8,12 @@ ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 # RUN dpkg-reconfigure locales
 
-CMD sh /a/bin/run_lstm.sh
+ADD bin /a/bin
+ADD cnf /a/cnf
 
-#CMD python -u bin/train.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_sample
-#CMD python -u bin/train.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_pad
-#CMD python -u bin/train.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_drop_03
+RUN chmod 777 /a
+RUN mkdir /board && chmod 777 /board
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+
+CMD sh /a/bin/run_lstm.sh

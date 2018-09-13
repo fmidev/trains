@@ -58,13 +58,16 @@ def read(options):
             options.train_types = ['K', 'L']
 
         _path('save_path', 'models')
+        options.save_file = options.save_path+'/model.pkl'
+
         _path('output_path', 'results')
         options.vis_path = options.output_path+'/validation_testset'
         if not os.path.exists(options.vis_path):
             os.makedirs(options.vis_path)
 
-        _path('log_dir', '/tmp')
-        options.save_file = options.save_path+'/model.pkl'
+        _path('log_dir', '/board')
+        if not os.path.exists(options.vis_path):
+            os.makedirs(options.vis_path)
 
         # common / several
         _bval('cv')
@@ -75,6 +78,7 @@ def read(options):
         _intval('n_loops')
         _intval('batch_size')
         _bval('tf')
+        _intval('y_avg_hours')
 
         # linear regression
         _fval('alpha')

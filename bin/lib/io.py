@@ -425,6 +425,7 @@ class IO(Manipulator):
         return starttime, endtime
 
 
+
     #
     # TRAINS
     #
@@ -1007,6 +1008,24 @@ class IO(Manipulator):
             res[name].append((values.time, values.lat, values.lon, float(pred.pop(0)), values.origintime))
 
         return res
+
+    def calc_running_delay_avg(self, data, hours):
+        """
+        Calculate running average for delay
+        """
+        logging.info('Calculating rolling average of delay with time window {}...'.format(hours))
+
+        def run_avg(df):
+            delay = df.loc[:, ['time', 'delay']]
+            delay = delay.set_index('time').asfreq(freq='1H').rolling(hours, min_periods=1).mean()
+            df = df.set_index('time', drop=False).drop(columns=['delay'])
+            df = df.join(delay, how='left')
+            return df
+
+        data = data.groupby('trainstation').apply(run_avg).reset_index(drop=True)
+        return data
+        
+
     #
     # SASSE
     #

@@ -20,8 +20,18 @@ class LSTM(object):
         with tf.variable_scope('LSTM_cell'):
             self.add_cell()
 
+        with tf.variable_scope('out_dense_1'):
+            in_size = self.cell_outputs.shape[1]
+            out_size = int(self.n_steps/2)
+            self.dense_1 = self.add_dense_layer(self.cell_outputs, in_size, out_size)
+
+        # with tf.variable_scope('out_dense_2'):
+        #     in_size = out_size
+        #     out_size = int(out_size/2)
+        #     self.dense_2 = self.add_dense_layer(self.dense_1, in_size, out_size)
+
         with tf.variable_scope('out_hidden'):
-            self.add_output_layer()
+            self.add_output_layer(self.dense_1, out_size)
 
         with tf.name_scope('loss'):
             self.compute_loss()
@@ -50,12 +60,28 @@ class LSTM(object):
                                                                          self.l_in_y_drop,
                                                                          dtype=tf.float32,
                                                                          time_major=True)
-    def add_output_layer(self):
+
+    def add_dense_layer(self, input, in_size, out_size):
+
+        # self.out_dense_size = int(self.n_steps/2)
+
         # shape = (batch * steps, n_hidden)
-        l_out_x = tf.reshape(self.cell_outputs, [-1, self.n_hidden], name='2_2D')
+        l_dense_x = tf.reshape(input, [-1, self.n_hidden], name='2_2D')
         #l_out_x_drop = tf.nn.dropout(l_out_x, self.p_drop)
-        W_out = self._weight_variable([self.n_hidden, self.output_size])
+        W_dense = self._weight_variable([self.n_hidden, out_size])
+        b_dense = self._bias_variable([out_size, ])
+
+        return tf.matmul(l_dense_x, W_dense) + b_dense
+
+
+    def add_output_layer(self, input, in_size):
+
+        # shape = (batch * steps, n_hidden)
+        l_out_x = tf.reshape(input, [-1, in_size], name='2_2D')
+        #l_out_x_drop = tf.nn.dropout(l_out_x, self.p_drop)
+        W_out = self._weight_variable([in_size, self.output_size])
         b_out = self._bias_variable([self.output_size, ])
+
         # shape = (batch * steps, output_size)
         with tf.name_scope('pred'):
             self.pred = tf.matmul(l_out_x, W_out) + b_out
@@ -73,7 +99,7 @@ class LSTM(object):
             self.loss = tf.reduce_mean(tf.squared_difference(reshape_target, reshape_pred))
 
             # MSE^2
-            self.loss = tf.reduce_mean(tf.square(tf.squared_difference(reshape_target, reshape_pred)))
+            # self.loss = tf.reduce_mean(tf.square(tf.squared_difference(reshape_target, reshape_pred)))
 
             # MSE^3
             #self.loss = tf.reduce_mean(tf.pow(tf.squared_difference(reshape_target, reshape_pred), 3))
