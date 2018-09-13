@@ -104,6 +104,9 @@ def main():
         if len(data) == 0:
             continue
 
+        if options.y_avg_hours is not None:
+            data = io.calc_running_delay_avg(data, options.y_avg_hours)
+
         data.sort_values(by=['time', 'trainstation'], inplace=True)
         logging.info('Processing {} rows...'.format(len(data)))
 
@@ -148,8 +151,8 @@ def main():
                 y_pred_batch = sess.run(op_y_pred, feed_dict=feed_dict).ravel()
                 if options.normalize:
                     y_pred_batch = yscaler.inverse_transform(y_pred_batch)
-                    
-                print(y_pred_batch)
+
+                # print(y_pred_batch)
                 if first:
                     y_pred = list(y_pred_batch)
                     target = list(target_batch.ravel())
@@ -167,15 +170,21 @@ def main():
         else:
             y_pred = predictor.predict(features)
 
+        if len(y_pred) < 1 or len(target) < 1:
+            continue
+            
         # Create timeseries of predicted and happended delay
         i = 0
         for t in times:
-            if t not in avg_delay.keys():
-                avg_delay[t] = [target[i]]
-                avg_pred_delay[t] = [y_pred[i]]
-            else:
-                avg_delay[t].append(target[i])
-                avg_pred_delay[t].append(y_pred[i])
+            try:
+                if t not in avg_delay.keys():
+                    avg_delay[t] = [target[i]]
+                    avg_pred_delay[t] = [y_pred[i]]
+                else:
+                    avg_delay[t].append(target[i])
+                    avg_pred_delay[t].append(y_pred[i])
+            except IndexError as e:
+                logging.error(e)
             i += 1
 
         # For creating visualisation

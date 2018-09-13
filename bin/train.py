@@ -12,6 +12,7 @@ from configparser import ConfigParser
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import IncrementalPCA
 
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
@@ -19,6 +20,7 @@ from sklearn.metrics import r2_score
 
 import tensorflow as tf
 from tensorflow.contrib import rnn
+from tensorflow.python.client import device_lib
 
 from lib import io as _io
 from lib import viz as _viz
@@ -53,6 +55,8 @@ def main():
     """
     Main program
     """
+    local_device_protos = device_lib.list_local_devices()
+    logging.info([x.name for x in local_device_protos if x.device_type == 'GPU'])
 
     bq = _bq.BQHandler()
     io = _io.IO(gs_bucket=options.gs_bucket)
@@ -107,6 +111,10 @@ def main():
                                 time_column='time',
                                 sum_columns=['delay'],
                                 aggs=aggs)
+
+    if options.y_avg_hours is not None:
+        data = io.calc_running_delay_avg(data, options.y_avg_hours)
+
     data.sort_values(by=['time', 'trainstation'], inplace=True)
 
     if options.normalize:
@@ -119,9 +127,27 @@ def main():
 
         yscaler.fit(labels)
         scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
-        scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:, options.feature_params]))
+        scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:, options.feature_params]),
+                                       columns=options.feature_params)
 
         data = pd.concat([non_scaled_data, scaled_features, scaled_labels], axis=1)
+
+    if options.pca:
+        logging.info('Doing PCA analyzis for the data...')
+        ipca = IncrementalPCA(n_components=options.pca_components,
+                              whiten = options.whiten,
+                              copy = False)
+
+        non_processed_data = data.loc[:,options.meta_params+ options.label_params]
+        processed_data = data.loc[:, options.feature_params]
+        ipca.fit(processed_data)
+        processed_features = pd.DataFrame(ipca.transform(processed_data))
+
+        data = pd.concat([non_processed_data, processed_data], axis=1)
+
+        fname = options.output_path+'/ipca_explained_variance.png'
+        viz.explained_variance(ipca, fname)
+        io._upload_to_bucket(filename=fname, ext_filename=fname)
 
     data_train, data_test = train_test_split(data, test_size=0.33)
     X_test, y_test = io.extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
