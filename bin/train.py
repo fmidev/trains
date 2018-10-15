@@ -72,26 +72,6 @@ def main():
     all_param_names = options.label_params + options.feature_params + options.meta_params
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
-    # Initialise errors
-    rmses, mses, maes, steps, train_mse = [], [], [], [], []
-
-    # Define model
-    model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr, options.p_drop)
-
-    saver = tf.train.Saver()
-    sess = tf.Session()
-    init = tf.global_variables_initializer()
-    sess.run(init)
-    summary_writer = tf.summary.FileWriter(options.log_dir, graph=tf.get_default_graph())
-
-    #tf.summary.scalar('Training MSE', model.loss)
-    tf.summary.scalar('Validation_MSE', model.mse)
-    tf.summary.scalar('Validation_RMSE', model.rmse)
-    tf.summary.scalar('Validation_MAE', model.mae)
-    tf.summary.histogram('y_pred_hist', model.y_pred)
-    merged_summary_op = tf.summary.merge_all()
-    train_summary_op = tf.summary.scalar('Training_MSE', model.loss)
-
     logging.info('Reading data...')
     bq.set_params(starttime,
                   endtime,
@@ -152,9 +132,26 @@ def main():
     data_train, data_test = train_test_split(data, test_size=0.33)
     X_test, y_test = io.extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
 
-    # Batch size just for information
+    # Define model
     batch_size = io.get_batch_size(data_train, options.pad_strategy, quantile=options.quantile)
-    logging.info('Using batch size: {}'.format(batch_size))
+    logging.info('Batch size: {}'.format(batch_size))
+    model = LSTM.LSTM(options.time_steps, len(options.feature_params), 1, options.n_hidden, options.lr, options.p_drop, batch_size=batch_size)
+
+    # Initialization
+    rmses, mses, maes, steps, train_mse = [], [], [], [], []
+    saver = tf.train.Saver()
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    summary_writer = tf.summary.FileWriter(options.log_dir, graph=tf.get_default_graph())
+
+    #tf.summary.scalar('Training MSE', model.loss)
+    tf.summary.scalar('Validation_MSE', model.mse)
+    tf.summary.scalar('Validation_RMSE', model.rmse)
+    tf.summary.scalar('Validation_MAE', model.mae)
+    tf.summary.histogram('y_pred_hist', model.y_pred)
+    merged_summary_op = tf.summary.merge_all()
+    train_summary_op = tf.summary.scalar('Training_MSE', model.loss)
 
     train_step = 0
     start = 0

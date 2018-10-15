@@ -1,0 +1,10 @@
+FROM tervo/gpflow
+
+ADD bin /a/bin
+ADD cnf /a/cnf
+
+RUN chmod 777 /a
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+
+CMD python -u bin/train_gpflow.py --logging_level INFO --config_filename cnf/gp.ini --config_name all_params_long_distance_trains

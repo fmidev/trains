@@ -14,30 +14,31 @@ def read(options):
 
         setattr(options, name, val)
 
-    def _fval(name):
+    def _fval(name, default=None):
         ''' Convert float val to float taking possible None value into account'''
         val = getattr(options, name, None)
         if val is not None and val != 'None':
             val = float(val)
         else:
-            val = None
+            val = default
         setattr(options, name, val)
 
-    def _bval(name):
+    def _bval(name, default=False):
         ''' Convert option from int to bool'''
         val = getattr(options, name, False)
         if int(val) == 1: val = True
-        else: val = False
+        else: val = default
         setattr(options, name, val)
 
-    def _intval(name):
+    def _intval(name, default=None):
         ''' Convert int val to integer taking possible None value into account'''
         val = getattr(options, name, None)
         if val is not None and val != 'None':
             val = int(val)
         else:
-            val = None
+            val = default
         setattr(options, name, val)
+
 
     parser = ConfigParser()
     parser.read(options.config_filename)
@@ -79,6 +80,8 @@ def read(options):
         _intval('batch_size')
         _bval('tf')
         _intval('y_avg_hours')
+        _intval('day_step', 5000)
+        _intval('hour_step', 0)
 
         # linear regression
         _fval('alpha')
@@ -119,6 +122,7 @@ def read(options):
         # other
         _intval('pca_components')
         _intval('dbscan')
+
 
         return options
     else:

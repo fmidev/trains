@@ -98,14 +98,15 @@ def main():
                               fit_intercept=options.fit_intercept,
                               copy_X=options.copy_X)
     elif options.model == 'gp':
-        k1 = 66.0**2 * RBF(length_scale=67.0)  # long term smooth rising trend
-        k2 = 2.4**2 * RBF(length_scale=90.0) * ExpSineSquared(length_scale=1.3, periodicity=1.0)  # seasonal component
-        # medium term irregularity
-        k3 = 0.66**2 * RationalQuadratic(length_scale=1.2, alpha=0.78)
-        k4 = 0.18**2 * RBF(length_scale=0.134) + WhiteKernel(noise_level=0.19**2)  # noise terms
-        kernel_gpml = k1 + k2 + k3 + k4
-        model = GaussianProcessRegressor(kernel=kernel_gpml, alpha=0,
-                              optimizer=None, normalize_y=True)
+        k_long_term = 66.0**2 * RBF(length_scale=67.0)
+        k_seasonal = 2.4**2 * RBF(length_scale=90.0)* ExpSineSquared(length_scale=150, periodicity=1.0, periodicity_bounds=(0,10000))
+        k_medium_term = 0.66**2 * RationalQuadratic(length_scale=1.2, alpha=0.78)
+        k_noise = 0.18**2 * RBF(length_scale=0.134) + WhiteKernel(noise_level=0.19**2)
+        #kernel_gpml = k_long_term + k_seasonal + k_medium_term + k_noise
+        kernel_gpml = k_long_term + k_seasonal + k_medium_term + k_noise
+
+        model = GaussianProcessRegressor(kernel=kernel_gpml, #alpha=0,
+                                         optimizer=None, normalize_y=True)
 
     if options.pca:
         ipca = IncrementalPCA(n_components=options.pca_components,
@@ -239,7 +240,7 @@ def main():
             sys.exit()
         else:
             logging.info('Training...')
-            if options.model in ['rf', 'svr', 'ard']:
+            if options.model in ['rf', 'svr', 'ard', 'gp']:
                 model.fit(X_train, y_train)
             else:
                 model.partial_fit(X_train, y_train)
@@ -257,7 +258,7 @@ def main():
         end_times.append(end.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times_obj.append(end)
 
-        if options.model in ['rf', 'lr', 'ard']:
+        if options.model in ['rf', 'lr', 'ard', 'gp']:
             logging.info('R2 score for training: {}'.format(model.score(X_train, y_train)))
 
         logging.info('RMSE: {}'.format(rmse))
