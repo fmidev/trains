@@ -2,13 +2,14 @@ import tensorflow as tf
 
 class LSTM(object):
 
-    def __init__(self, n_steps, input_size, output_size, n_hidden, lr, p_drop=0):
+    def __init__(self, n_steps, input_size, output_size, n_hidden, lr, p_drop=0, batch_size=None):
         self.n_steps = n_steps
         self.input_size = input_size
         self.output_size = output_size
         self.n_hidden = n_hidden
         self.lr = lr
         self.p_drop = p_drop
+        self.batch_size = batch_size
 
         with tf.name_scope('inputs'):
             self.X = tf.placeholder(tf.float32, [n_steps, None, input_size], name='X')
@@ -21,7 +22,8 @@ class LSTM(object):
             self.add_cell()
 
         with tf.variable_scope('out_dense_1'):
-            in_size = self.cell_outputs.shape[1]
+            #in_size = self.cell_outputs.shape[1]
+            in_size = input_size
             out_size = int(self.n_steps/2)
             self.dense_1 = self.add_dense_layer(self.cell_outputs, in_size, out_size)
 
@@ -67,11 +69,14 @@ class LSTM(object):
 
         # shape = (batch * steps, n_hidden)
         l_dense_x = tf.reshape(input, [-1, self.n_hidden], name='2_2D')
+        #in_size = self.batch_size * self.n_steps
+        #l_dense_x = tf.reshape(input, [self.n_hidden, -1], name='2_2D')
+
         #l_out_x_drop = tf.nn.dropout(l_out_x, self.p_drop)
         W_dense = self._weight_variable([self.n_hidden, out_size])
         b_dense = self._bias_variable([out_size, ])
 
-        return tf.matmul(l_dense_x, W_dense) + b_dense
+        return tf.sigmoid(tf.matmul(l_dense_x, W_dense) + b_dense, name='act_dense')
 
 
     def add_output_layer(self, input, in_size):
@@ -116,9 +121,9 @@ class LSTM(object):
         return tf.square(tf.subtract(labels, logits))
 
     def _weight_variable(self, shape, name='weights'):
-        initializer = tf.random_normal_initializer(mean=0., stddev=1.,)
+        initializer = tf.glorot_uniform_initializer()
         return tf.get_variable(shape=shape, initializer=initializer, name=name)
 
     def _bias_variable(self, shape, name='biases'):
-        initializer = tf.constant_initializer(0.1)
+        initializer = tf.constant_initializer(0)
         return tf.get_variable(name=name, shape=shape, initializer=initializer)

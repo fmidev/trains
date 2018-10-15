@@ -172,7 +172,7 @@ def main():
 
         if len(y_pred) < 1 or len(target) < 1:
             continue
-            
+
         # Create timeseries of predicted and happended delay
         i = 0
         for t in times:
@@ -201,7 +201,7 @@ def main():
         station_r2[station] = r2
 
         logging.info('RMSE for station {}: {}'.format(stationName, rmse))
-        logging.info('Median absolute error for station {}: {}'.format(stationName, median_abs_err))
+        logging.info('Mean absolute error for station {}: {}'.format(stationName, median_abs_err))
         logging.info('R2 score for station {}: {}'.format(stationName, r2))
 
         # Create csv and upload it to pucket
@@ -238,7 +238,7 @@ def main():
     r2 = metrics.r2_score(avg_delay, avg_pred_delay)
 
     logging.info('RMSE for average delay over all stations: {}'.format(rmse))
-    logging.info('Median absolute error for average delay over all stations: {}'.format(median_abs_err))
+    logging.info('Mean absolute error for average delay over all stations: {}'.format(median_abs_err))
     logging.info('R2 score for average delay over all stations: {}'.format(r2))
 
     # Write average data into file

@@ -3,8 +3,8 @@ place;place
 lat;lat
 lon;lon
 pressure;pressure
-MaximumTemperature;max_temperature
-MinimumTemperature;min_temperature
+MaxTemperature;max_temperature
+MinTemperature;min_temperature
 temperature;mean_temperature
 dewpoint;mean_dewpoint
 humidity;mean_humidity

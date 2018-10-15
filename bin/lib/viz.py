@@ -239,11 +239,20 @@ class Viz:
         self._save(plt, filename)
 
 
-    def rfc_feature_importance(self, data, filename):
-        fig, ax1 = plt.subplots(figsize=(12,8))
+    def rfc_feature_importance(self, data, filename, feature_names = None,
+                               fontsize=12):
+        fig, ax = plt.subplots(figsize=(20,8))
 
         plt.clf()
-        plt.bar(range(0,len(data)), data)
+        plt.rc('font', size=fontsize)
+
+        if feature_names is None:
+            feature_names = range(0,len(data))
+        else:
+            plt.xticks(rotation=90)
+            fig.subplots_adjust(bottom=0.3)
+            
+        plt.bar(feature_names, data, align='center')
         plt.xlabel('components')
         plt.ylabel('importance')
 
@@ -833,4 +842,43 @@ class Viz:
         labs = [l.get_label() for l in lns]
         plt.legend(lns, labs, frameon=True)
         #plt.legend()
+        self._save(plt, filename)
+
+
+    def plot_svga(self, m, filename):
+        """
+        Plot Sparse Variational Gaussian approximation performance.
+
+        https://gpflow.readthedocs.io/en/latest/notebooks/multiclass.html#Sparse-Variational-Gaussian-approximation
+        """
+
+        f = plt.figure(figsize=(12,6))
+        a1 = f.add_axes([0.05, 0.05, 0.9, 0.6])
+        a2 = f.add_axes([0.05, 0.7, 0.9, 0.1])
+        a3 = f.add_axes([0.05, 0.85, 0.9, 0.1])
+
+        xx = np.linspace(m.X.read_value().min(), m.X.read_value().max(), 200).reshape(-1,1)
+        mu, var = m.predict_f(xx)
+        mu, var = mu.copy(), var.copy()
+        p, _ = m.predict_y(xx)
+
+        a3.set_xticks([])
+        a3.set_yticks([])
+
+        a3.set_xticks([])
+        a3.set_yticks([])
+
+        i=0
+        x = m.X.read_value()[m.Y.read_value().flatten()==i]
+        points, = a3.plot(x, x*0, '.')
+        color=points.get_color()
+        a1.plot(xx, mu[:,i], color=color, lw=2)
+        a1.plot(xx, mu[:,i] + 2*np.sqrt(var[:,i]), '--', color=color)
+        a1.plot(xx, mu[:,i] - 2*np.sqrt(var[:,i]), '--', color=color)
+        a2.plot(xx, p[:,i], '-', color=color, lw=2)
+
+        a2.set_ylim(-0.1, 1.1)
+        a2.set_yticks([0, 1])
+        a2.set_xticks([])
+
         self._save(plt, filename)
