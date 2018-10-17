@@ -179,6 +179,17 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/lr.ini} --config_name ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO} --stations PSL,OL #,VS
 #############
+  vizens:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/viz_performance_ensembles.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-16_params_1} --logging_level ${LOGGING:-INFO} --stations PSL,OL,TPE,OV,PM,II,KEM,HKI #--endtime 2011-12-31 #,VS
+#############
   vis:
     volumes:
       - ~:/root:ro
@@ -214,3 +225,13 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
     image: docker.weatherproof.fi:5000/trains-prediction:1.2
     command: python -u bin/get_prediction_scikit.py --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --model_file ${MODEL_FILE:-model/model.pkl} --prec6h 0 --parameters_filename cnf/16_params_1.txt
+
+
+  jup:
+      volumes:
+        - ~/Dropbox/tyot/trains:/home/jovyan/work
+      environment:
+        PYTHONUNBUFFERED: 1
+      image: jupyter/all-spark-notebook
+      ports:
+        - "81:8888"
