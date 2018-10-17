@@ -2,7 +2,7 @@
 import sys, os
 from sklearn.externals import joblib
 import numpy as np
-# import pandas as pd
+import pandas as pd
 import json
 import logging
 
@@ -11,6 +11,58 @@ class Manipulator:
     def __init__(self):
         pass
 
+    def pred_fractiles(self, metadata, pred, stationList):
+        """
+        Create fractiles from prediction
+
+        metadata    : Pandas dataframe
+                      pandas dataframe with 'trainstation' and 'time columns'
+        pred        : lst
+                      predicted delay in the same order with metadata
+        stationList : struct
+                      {stationName : {'lat': xx, 'lon': xx}}
+
+        return      : Pandas Dataframe
+                      'trainstation', 'time', 'delay', 'lower bound', 'upper bound'
+        """
+
+        def group(row):
+            """
+            Divide stations to three groups based on their latitude
+            """
+            if stationList[row]['lat'] > 65: return 3
+            if stationList[row]['lat'] > 62: return 2
+            if stationList[row]['lat'] > 59: return 1
+            return 0
+
+        # Divide stations to groups
+        df = pd.concat([metadata, pd.DataFrame(pred, columns=['pred_delay'])], axis=1)
+        df['group'] = df.apply(lambda x: group(x['trainstation']), axis=1)
+
+        # Calc quantiles
+        df['low'] = np.nan
+        df['median'] = np.nan
+        df['high'] = np.nan
+        df['avg_delay'] = np.nan
+        df['avg_pred_delay'] = np.nan
+        df['avg_pred_delay_low'] = np.nan
+        df['avg_pred_delay_high'] = np.nan
+
+        for t in df['time'].unique():
+            time_mask = (df['time'] == t)
+            df.loc[time_mask, 'avg_delay'] = df.loc[time_mask,'delay'].mean()
+            df.loc[time_mask, 'avg_pred_delay'] = df.loc[time_mask,'pred_delay'].mean()
+
+            for i in np.arange(1,4):
+                mask = (df['group'] == i) & time_mask
+                df.loc[mask, 'low'] = df.loc[mask,'pred_delay'].quantile(.1)
+                df.loc[mask, 'median'] = df.loc[mask,'pred_delay'].quantile(.5)
+                df.loc[mask, 'high'] = df.loc[mask,'pred_delay'].quantile(.9)
+                df.loc[mask, 'avg_pred_delay_low'] = df.loc[time_mask,'pred_delay'].quantile(.1)
+                df.loc[mask, 'avg_pred_delay_high'] = df.loc[time_mask,'pred_delay'].quantile(.9)
+
+        #print(df)
+        return df
 
     def read_parameters(self, filename, drop=0):
         """
@@ -186,7 +238,7 @@ class Manipulator:
             start = batch_num*n_timesteps
         if end is None:
             end = start + n_timesteps
-            
+
         times = all_times[start:end]
 
         values = []

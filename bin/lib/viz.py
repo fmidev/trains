@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import sys, re, itertools
+import sys, re, itertools, copy, logging
 import numpy as np
 import matplotlib as mlp
 mlp.use('Agg')
@@ -17,7 +17,6 @@ from sklearn.metrics import roc_curve, auc, precision_score, f1_score, recall_sc
 from scipy import interp
 import boto3, tempfile
 from os.path import basename
-import logging
 from datetime import datetime as dt
 import matplotlib.dates as mdates
 from matplotlib.dates import MO, TU, WE, TH, FR, SA, SU
@@ -251,7 +250,7 @@ class Viz:
         else:
             plt.xticks(rotation=90)
             fig.subplots_adjust(bottom=0.3)
-            
+
         plt.bar(feature_names, data, align='center')
         plt.xlabel('components')
         plt.ylabel('importance')
@@ -710,7 +709,8 @@ class Viz:
         plt.savefig(filename)
         plt.close()
 
-    def _split_to_gaps(self, times, delay=None, pred_delay=None, gap=None):
+
+    def _split_to_parts(self, times, data, gap=None):
         """
         Split time list to gaps
         """
@@ -725,31 +725,44 @@ class Viz:
 
         splits = []
         prev = times[0]
-        times_in_split, delays_in_split, pred_delays_in_split = [], [], []
+        temp_data = []
+        for j in np.arange(0,len(data)+1):
+            temp_data.append([])
+
         i = 0
         for t in times:
             dt = t - prev
             if dt.total_seconds() > gap:
-                splits.append((times_in_split, delays_in_split, pred_delays_in_split))
-                times_in_split, delays_in_split, pred_delays_in_split = [], [], []
+                splits.append(copy.deepcopy(temp_data))
+                for j in np.arange(0,len(data)):
+                    temp_data[j+1] = []
+                temp_data[0] = []
 
-            times_in_split.append(t)
-            if delay is not None:
-                delays_in_split.append(delay[i])
-            if pred_delay is not None:
-                pred_delays_in_split.append(pred_delay[i])
+            temp_data[0].append(t)
+            for j in np.arange(0,len(data)):
+                if data[j] is not None:
+                    temp_data[j+1].append(data[j][i])
+                else:
+                    temp_data[j+1].append(None)
 
             prev = t
             i += 1
-        splits.append((times_in_split, delays_in_split, pred_delays_in_split))
+        splits.append(copy.deepcopy(temp_data))
         return splits
 
-    def plot_delay(self, all_times, all_delay=None, all_pred_delay=None, heading='Delay', filename='delay.png'):
+    def plot_delay(self, all_times, all_delay=None, all_pred_delay=None,
+                   heading='Delay', filename='delay.png',
+                   all_low=None, all_high=None):
         """
         Plot delay and predicted delay over time
         """
-        splits = self._split_to_gaps(all_times, all_delay, all_pred_delay, 2592000)
-        fig, ax = plt.subplots(figsize=(28,10))
+        plt.clf()
+
+        plt.rcParams.update({'font.size': 16})
+
+        splits = self._split_to_parts(all_times, [all_delay, all_pred_delay, all_low, all_high], 2592000)
+        logging.info('Data have {} splits'.format(len(splits)))
+        fig, axes = plt.subplots(1, len(splits), figsize=(28,10))
 
         years = mdates.YearLocator()   # every year
         months = mdates.MonthLocator()  # every month
@@ -757,39 +770,67 @@ class Viz:
         hours = mdates.HourLocator()
         yearsFmt = mdates.DateFormatter('%m')
 
-        plt.clf()
         plt.grid()
+        max_ = 0
 
         for i in range(0, len(splits)):
-            ax = plt.subplot(1, len(splits), (i+1))
-            times, delay, pred_delay = splits[i]
+            if len(splits) > 1:
+                ax = axes[i]
+            else:
+                ax = axes
 
-            if delay is not None:
-                plt.plot(times,
-                         delay,
-                         c="#27ae61",
-                         label="True delay")
+            times, delay, pred_delay, low, high = splits[i]
+            max_ = 0
+            if low[0] is not None and high[0] is not None:
+                ax.fill_between(times,
+                                high,
+                                low,
+                                facecolor="#ff7a7a",
+                                alpha=0.5,
+                                joinstyle='round',
+                                capstyle='round',
+                                label='Predicted delay 10-90 % quantile')
+
+                if max(high) > max_:
+                    max_ = max(high)
 
             if pred_delay is not None:
-                plt.plot(times,
+                ax.plot(times,
                          pred_delay,
-                         c="#c1392b",
+                         c="#ff7a7a",
+                         linewidth=0.5,
                          label="Predicted delay")
+                if max(pred_delay) > max_:
+                    max_ = max(pred_delay)
 
-                plt.xlabel("Time")
-                plt.ylabel("Delay [minutes]")
-                plt.title(heading)
-
-            #ax.xaxis.set_major_locator(months)
-            #ax.xaxis.set_major_formatter(yearsFmt)
-            #ax.xaxis.set_minor_locator(days)
+            if delay is not None:
+                ax.plot(times,
+                         delay,
+                         c="#126cc5",
+                         linewidth=0.5,
+                         label="True delay")
+                if max(delay) > max_:
+                    max_ = max(delay)
 
             ax.format_xdata = mdates.DateFormatter('%Y %m %d')
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Delay [minutes]")
+            ax.title.set_text(heading)
 
             ax.grid(True)
             fig.autofmt_xdate()
-
             ax.legend()
+
+        for i in range(0, len(splits)):
+            if len(splits) > 1:
+                ax = axes[i]
+            else:
+                ax = axes
+            if max_ <= 100:
+                ax.set_ylim([0,100])
+            else:
+                ax.set_ylim([0,max_])
+
         self._save(plt, filename)
 
     def plot_learning_over_time(self, times, rmse=None, mae=None,
