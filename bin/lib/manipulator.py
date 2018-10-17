@@ -43,26 +43,39 @@ class Manipulator:
         df['low'] = np.nan
         df['median'] = np.nan
         df['high'] = np.nan
-        df['avg_delay'] = np.nan
-        df['avg_pred_delay'] = np.nan
-        df['avg_pred_delay_low'] = np.nan
-        df['avg_pred_delay_high'] = np.nan
 
+        index = pd.MultiIndex.from_tuples(tuples=(),  names=['time', 'group'])
+        avg = pd.DataFrame(index=index, columns=['avg_delay', 'avg_pred_delay', 'avg_pred_delay_low', 'avg_pred_delay_high'])
+        #df['avg_delay'] = np.nan
+        #df['avg_pred_delay'] = np.nan
+        #df['avg_pred_delay_low'] = np.nan
+        #df['avg_pred_delay_high'] = np.nan
+
+        #print(df['time'])
+        #print(len(df['time'].unique()))
         for t in df['time'].unique():
             time_mask = (df['time'] == t)
-            df.loc[time_mask, 'avg_delay'] = df.loc[time_mask,'delay'].mean()
-            df.loc[time_mask, 'avg_pred_delay'] = df.loc[time_mask,'pred_delay'].mean()
+            #print(t)
+            #print(df.loc[time_mask,'delay'])
+            #print(df.loc[time_mask,'delay'].mean())
+            #sys.exit()
 
             for i in np.arange(1,4):
                 mask = (df['group'] == i) & time_mask
                 df.loc[mask, 'low'] = df.loc[mask,'pred_delay'].quantile(.1)
                 df.loc[mask, 'median'] = df.loc[mask,'pred_delay'].quantile(.5)
                 df.loc[mask, 'high'] = df.loc[mask,'pred_delay'].quantile(.9)
-                df.loc[mask, 'avg_pred_delay_low'] = df.loc[time_mask,'pred_delay'].quantile(.1)
-                df.loc[mask, 'avg_pred_delay_high'] = df.loc[time_mask,'pred_delay'].quantile(.9)
 
-        #print(df)
-        return df
+                avg.loc[(t,i), 'avg_delay'] = df.loc[mask, 'delay'].mean()
+                avg.loc[(t,i), 'avg_pred_delay'] = df.loc[mask, 'pred_delay'].mean()
+                avg.loc[(t,i), 'avg_pred_delay_low'] = df.loc[mask, 'pred_delay'].quantile(.1)
+                avg.loc[(t,i), 'avg_pred_delay_high'] = df.loc[mask, 'pred_delay'].quantile(.9)
+
+            avg.loc[(t, 'all'), 'avg_delay'] = df.loc[time_mask, 'delay'].mean()
+            avg.loc[(t, 'all'), 'avg_pred_delay'] = df.loc[time_mask, 'pred_delay'].mean()
+
+        print(avg)
+        return df, avg
 
     def read_parameters(self, filename, drop=0):
         """

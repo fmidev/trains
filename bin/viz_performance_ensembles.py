@@ -110,7 +110,7 @@ def main():
 
     # Calculate quantiles
     logging.info('Calculating fractiles...')
-    pred = io.pred_fractiles(l_data, y_pred, stationList)
+    pred, avg = io.pred_fractiles(l_data, y_pred, stationList)
 
     #print(l_data)
     #print(len(y_pred))
@@ -132,19 +132,19 @@ def main():
                                                   group)
 
         logging.info('Processing station {} (having {} rows)...'.format(station, len(data)))
-        logging.info('Creating timeseries of predicted and happended delay...')
-        i = 0
-        for t in times:
-            try:
-                if t not in avg_delay.keys():
-                    avg_delay[t] = [data.loc[data['time'] == t, 'delay'].values]
-                    avg_pred_delay[t] = [data.loc[data['time'] == t, 'pred_delay'].values]
-                else:
-                    avg_delay[t].append(data.loc[data['time'] == t, 'delay'].values)
-                    avg_pred_delay[t].append(data.loc[data['time'] == t, 'pred_delay'].values)
-            except IndexError as e:
-                logging.error(e)
-            i += 1
+        #logging.info('Creating timeseries of predicted and happended delay...')
+        # i = 0
+        # for t in times:
+        #     try:
+        #         if t not in avg_delay.keys():
+        #             avg_delay[t] = [data.loc[data['time'] == t, 'delay'].values]
+        #             avg_pred_delay[t] = [data.loc[data['time'] == t, 'pred_delay'].values]
+        #         else:
+        #             avg_delay[t].append(data.loc[data['time'] == t, 'delay'].values)
+        #             avg_pred_delay[t].append(data.loc[data['time'] == t, 'pred_delay'].values)
+        #     except IndexError as e:
+        #         logging.error(e)
+        #     i += 1
 
         # For creating visualisation
         #all_times = all_times.union(set(times))
@@ -195,15 +195,8 @@ def main():
 
     # Create timeseries of avg actual delay and predicted delay
     all_times = sorted(list(all_times))
-    #print(avg_delay)
-    # for t,l in avg_delay.items():
-    #     avg_delay[t] = sum(l)/len(l)
-    # for t,l in avg_pred_delay.items():
-    #     avg_pred_delay[t] = sum(l)/len(l)
-    # avg_delay = list(OrderedDict(sorted(avg_delay.items(), key=lambda t: t[0])).values())
-    # avg_pred_delay = list(OrderedDict(sorted(avg_pred_delay.items(), key=lambda t: t[0])).values())
-    avg_delay = pred.loc[:,'avg_delay'].values
-    avg_pred_delay = pred.loc[:,'avg_pred_delay'].values
+    avg_delay = avg.loc[avg.index.get_level_values('group')=='all','avg_delay'].dropna().values.ravel()
+    avg_pred_delay = avg.loc[avg.index.get_level_values('group')=='all','avg_pred_delay'].dropna().values.ravel()
 
     # Calculate average over all times and stations
     rmse = math.sqrt(metrics.mean_squared_error(avg_delay, avg_pred_delay))
@@ -227,15 +220,31 @@ def main():
     fname='{}/avg_delays_all_stations.csv'.format(options.vis_path)
     io.write_csv(delay_data, fname, fname)
 
+    for i in np.arange(1,4):
+        fname='{}/avg_group_{}.png'.format(options.vis_path, i)
+        times = avg.index.get_level_values('time').values
+        g_avg_delay = avg.loc[avg.index.get_level_values('group')==i,'avg_delay'].values.ravel()
+        g_avg_pred_delay = avg.loc[avg.index.get_level_values('group')==i,'avg_pred_delay'].values.ravel()
+        g_avg_pred_delay_low = avg.loc[avg.index.get_level_values('group')==i,'avg_pred_delay_low'].values.ravel()
+        g_avg_pred_delay_high = avg.loc[avg.index.get_level_values('group')==i,'avg_pred_delay_high'].values.ravel()
+
+        viz.plot_delay(all_times,
+                       g_avg_delay,
+                       g_avg_pred_delay,
+                       'Average delay for group {}'.format(i),
+                       fname,
+                       g_avg_pred_delay_low,
+                       g_avg_pred_delay_high)
+        io._upload_to_bucket(filename=fname, ext_filename=fname)
+
+
     # visualise
     fname='{}/avg_all_stations.png'.format(options.vis_path)
     viz.plot_delay(all_times,
                    avg_delay,
                    avg_pred_delay,
                    'Average delay for all station',
-                   fname,
-                   pred.loc[:,'avg_pred_delay_low'].values,
-                   pred.loc[:,'avg_pred_delay_high'].values)
+                   fname)
     io._upload_to_bucket(filename=fname, ext_filename=fname)
 
 
