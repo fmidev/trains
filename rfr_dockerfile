@@ -2,6 +2,7 @@ FROM tervo/ml:cpu
 
 ADD bin /a/bin
 ADD cnf /a/cnf
+RUN chmod -R 777 /a
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
@@ -12,4 +13,8 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 # CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name no_latlon_params_1
 # CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name no_latlon_params_2
 
-CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name 16_params_2
+#CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name 16_params_2
+
+#CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name 16_params_commuter
+
+CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name 16_params_3

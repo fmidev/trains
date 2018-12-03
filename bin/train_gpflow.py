@@ -25,6 +25,7 @@ from lib import viz as _viz
 from lib import bqhandler as _bq
 from lib import imputer
 from lib import config as _config
+from lib.gp import GP
 
 def report_cv_results(results, filename=None, n_top=3):
     res = ""
@@ -153,40 +154,75 @@ def main():
     k = k_seasonal + k_weather + k_noise
 
     Z_list = options.z_list.split(',')
-    for size in Z_list:
 
-        with tf.Session() as sess:
+    if options.cv:
+        logging.info('Doing random search for hyper parameters...')
+
+        param_grid = {"length_scale": [0.1, 1, 2],
+                      "whiten": [True, False]
+                      }
+
+        Z = np.random.rand(int(size), 19)
+        model = GP(dim=19,
+                   Z=Z)
+
+        random_search = RandomizedSearchCV(model,
+                                           param_distributions=param_grid,
+                                           n_iter=int(options.n_iter_search),
+                                           n_jobs=-1)
+
+        random_search.fit(X_train, y_train)
+        logging.info("RandomizedSearchCV done.")
+        sys.exit()
+    else:
+        model = GP(dim=19,
+                   Z=Z
+                   )
+        model.fit(X_train.astype(np.float64),
+                  y_train.reshape((-1,1)).astype(np.float64))
+
+        model.save(options.save_file)
+
+        print('Training finished')
+        print(model.model)
+
+    #for size in Z_list:
+
+    #    with tf.Session() as sess:
             #custom_config = gpflow.settings.get_settings()
             #custom_config.verbosity.tf_compile_verb = True
 
             #with gpflow.settings.temp_settings(custom_config), gpflow.session_manager.get_session().as_default():
 
             #Z = X_train[::5].copy()
-            Z = np.random.rand(int(size), 19)
-            print('Training with inducing points: {}'.format(Z.shape))
-            
-            model = gpflow.models.SVGP(X_train.astype(np.float64),
-                                       y_train.reshape((-1,1)).astype(np.float64),
-                                       kern=k,
-                                       likelihood=gpflow.likelihoods.Gaussian(),
-                                       Z=Z,
-                                       #Z=X_train.copy(),
-                                       minibatch_size=100,
-                                       whiten=options.normalize
-                                       )
-                                       #model.likelihood.variance = 0.01
-
-            model.compile(session=sess)
-            opt = gpflow.train.ScipyOptimizer()
-            opt.minimize(model)
-
-            saver = gpflow.saver.Saver()
-            if os.path.exists(options.save_file):
-                os.remove(options.save_file)
-            saver.save(options.save_file, model)
-
-            print('Training finished')
-            print(model)
+            # Z = np.random.rand(int(size), 19)
+            # print('Training with inducing points: {}'.format(Z.shape))
+            #
+            # # model = gpflow.models.SVGP(X_train.astype(np.float64),
+            # #                            y_train.reshape((-1,1)).astype(np.float64),
+            # #                            kern=k,
+            # #                            likelihood=gpflow.likelihoods.Gaussian(),
+            # #                            Z=Z,
+            # #                            #Z=X_train.copy(),
+            # #                            minibatch_size=100,
+            # #                            whiten=options.normalize
+            # #                            )
+            # #                            #model.likelihood.variance = 0.01
+            # #
+            # # model.compile(session=sess)
+            # # opt = gpflow.train.ScipyOptimizer()
+            # # opt.minimize(model)
+            #
+            # model = GP(dim=19,
+            #            Z=Z
+            #            )
+            # model.fit(X_train.astype(np.float64),
+            #           y_train.reshape((-1,1)).astype(np.float64))
+            #
+            # model.save(options.save_file)
+            #
+            # print('Training finished')
+            # print(model.model)
 
             #fname=options.output_path+'/svga_performance.png'
             #viz.plot_svga(model, fname)

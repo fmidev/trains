@@ -190,6 +190,10 @@ def main():
         # For creating visualisation
         all_times = all_times.union(set(times))
 
+        # If only average plots are asked, continue to next station
+        if options.only_avg == 1:
+            continue
+
         # Calculate errors for given station
         rmse = math.sqrt(metrics.mean_squared_error(target, y_pred))
         median_abs_err = metrics.median_absolute_error(target, y_pred)
@@ -225,6 +229,8 @@ def main():
 
     # Create timeseries of avg actual delay and predicted delay
     all_times = sorted(list(all_times))
+    print(avg_pred_delay)
+    #print(avg_pred_delay)
     for t,l in avg_delay.items():
         avg_delay[t] = sum(l)/len(l)
     for t, l in avg_pred_delay.items():
@@ -271,6 +277,7 @@ if __name__=='__main__':
     parser.add_argument('--model_file', type=str, default=None, help='Path and filename of SciKit model file. If this is given, model_path is ignored.')
     parser.add_argument('--stations', type=str, default=None, help='List of train stations separated by comma')
     parser.add_argument('--stations_file', type=str, default='cnf/stations.json', help='Stations file, list of stations to process')
+    parser.add_argument('--only_avg', type=int, default=0, help='Create only avg plot')
     parser.add_argument('--logging_level',
                         type=str,
                         default='INFO',

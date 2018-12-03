@@ -138,7 +138,7 @@ def main():
                                         train_type_column='train_type',
                                         location_column='trainstation',
                                         time_column='time',
-                                        sum_columns=['delay'],
+                                        sum_columns=[options.label_column],
                                         aggs=aggs)
 
             if options.y_avg_hours is not None:
@@ -173,7 +173,7 @@ def main():
         logging.info('Processing {} rows...'.format(len(f_data)))
         assert l_data.shape[0] == f_data.shape[0]
 
-        target = l_data['delay'].astype(np.float32).values
+        target = l_data[options.label_column].astype(np.float32).values
         features = f_data.drop(columns=['loc_name', 'time']).astype(np.float32).values
 
         X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
@@ -272,7 +272,7 @@ def main():
     io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
     if options.model == 'rf':
         fname = options.output_path+'/rfc_feature_importance.png'
-        viz.rfc_feature_importance(model.feature_importances_, fname)
+        viz.rfc_feature_importance(model.feature_importances_, fname, feature_names=options.feature_params)
         io._upload_to_bucket(filename=fname, ext_filename=fname)
 
     try:

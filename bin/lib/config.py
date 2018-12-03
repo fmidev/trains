@@ -66,9 +66,13 @@ def read(options):
         if not os.path.exists(options.vis_path):
             os.makedirs(options.vis_path)
 
-        _path('log_dir', '/board')
+        try:
+            _path('log_dir', '/board')
+        except PermissionError:
+            pass
+
         if not os.path.exists(options.vis_path):
-            os.makedirs(options.vis_path)
+                os.makedirs(options.vis_path)
 
         # common / several
         _bval('cv')
@@ -82,6 +86,12 @@ def read(options):
         _intval('y_avg_hours')
         _intval('day_step', 5000)
         _intval('hour_step', 0)
+
+        try:
+            if options.label_column is None:
+                options.label_column = 'delay'
+        except:
+            options.label_column = 'delay'    
 
         # linear regression
         _fval('alpha')

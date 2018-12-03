@@ -682,10 +682,10 @@ class Viz:
         if height < 60: fontsize = 25
 
         fig, ax = plt.subplots(figsize=(width,height))
-        cax = ax.matshow(df, interpolation=None, aspect='auto')
+        cax = ax.matshow(df, interpolation=None, aspect='auto', vmin=0, vmax=255)
 
         labels = []
-        for name in df.columns.get_level_values('location id'):
+        for name in df.columns.get_level_values('trainstation'):
             labels.append(locs[name]['name'])
 
         loc = ticker.MultipleLocator(base=1.0)
@@ -732,7 +732,12 @@ class Viz:
         i = 0
         for t in times:
             dt = t - prev
-            if dt.total_seconds() > gap:
+            try:
+                diff = dt.total_seconds()
+            except AttributeError:
+                diff = dt / np.timedelta64(1, 's')
+
+            if diff > gap:
                 splits.append(copy.deepcopy(temp_data))
                 for j in np.arange(0,len(data)):
                     temp_data[j+1] = []
@@ -762,13 +767,7 @@ class Viz:
 
         splits = self._split_to_parts(all_times, [all_delay, all_pred_delay, all_low, all_high], 2592000)
         logging.info('Data have {} splits'.format(len(splits)))
-        fig, axes = plt.subplots(1, len(splits), figsize=(28,10))
-
-        years = mdates.YearLocator()   # every year
-        months = mdates.MonthLocator()  # every month
-        days = mdates.DayLocator()
-        hours = mdates.HourLocator()
-        yearsFmt = mdates.DateFormatter('%m')
+        fig, axes = plt.subplots(len(splits), 1, figsize=(28,15), sharex=False)
 
         plt.grid()
         max_ = 0
@@ -797,8 +796,8 @@ class Viz:
             if pred_delay is not None:
                 ax.plot(times,
                          pred_delay,
-                         c="#ff7a7a",
-                         linewidth=0.5,
+                         c="red",
+                         linewidth=0.75,
                          label="Predicted delay")
                 if max(pred_delay) > max_:
                     max_ = max(pred_delay)
@@ -807,18 +806,21 @@ class Viz:
                 ax.plot(times,
                          delay,
                          c="#126cc5",
-                         linewidth=0.5,
+                         linewidth=0.75,
                          label="True delay")
                 if max(delay) > max_:
                     max_ = max(delay)
 
-            ax.format_xdata = mdates.DateFormatter('%Y %m %d')
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m/%d'))
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+            ax.xaxis.set_tick_params(rotation=45)
+            ax.xaxis.set_visible(True)
             ax.set_xlabel("Time")
             ax.set_ylabel("Delay [minutes]")
-            ax.title.set_text(heading)
+            fig.suptitle(heading)
 
             ax.grid(True)
-            fig.autofmt_xdate()
+            #fig.autofmt_xdate()
             ax.legend()
 
         for i in range(0, len(splits)):
@@ -830,6 +832,8 @@ class Viz:
                 ax.set_ylim([0,100])
             else:
                 ax.set_ylim([0,max_])
+
+        plt.subplots_adjust(hspace=0.5)
 
         self._save(plt, filename)
 
