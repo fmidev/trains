@@ -9,7 +9,6 @@ cnf/pred_db.ini
 .DS_Store
 data/full
 data/delay_and_weather_data
-labels_vis_1_0_arch/
 models/
 results/
 visualizations/
