@@ -110,13 +110,8 @@ def main():
 
     # Calculate quantiles
     logging.info('Calculating fractiles...')
-    pred, avg = io.pred_fractiles(l_data, y_pred, stationList)
+    groups, avg, pred = io.pred_fractiles(l_data, y_pred, stationList)
 
-    #print(l_data)
-    #print(len(y_pred))
-    #sys.exit()
-
-    # print(pred)
     # Go through stations
     for station in stations:
 
@@ -132,22 +127,6 @@ def main():
                                                   group)
 
         logging.info('Processing station {} (having {} rows)...'.format(station, len(data)))
-        #logging.info('Creating timeseries of predicted and happended delay...')
-        # i = 0
-        # for t in times:
-        #     try:
-        #         if t not in avg_delay.keys():
-        #             avg_delay[t] = [data.loc[data['time'] == t, 'delay'].values]
-        #             avg_pred_delay[t] = [data.loc[data['time'] == t, 'pred_delay'].values]
-        #         else:
-        #             avg_delay[t].append(data.loc[data['time'] == t, 'delay'].values)
-        #             avg_pred_delay[t].append(data.loc[data['time'] == t, 'pred_delay'].values)
-        #     except IndexError as e:
-        #         logging.error(e)
-        #     i += 1
-
-        # For creating visualisation
-        #all_times = all_times.union(set(times))
 
         logging.info('Calculating errors for given station...')
         rmse = math.sqrt(metrics.mean_squared_error(data.loc[:,'delay'], data.loc[:,'pred_delay']))
@@ -168,8 +147,8 @@ def main():
         delay_data = {'times': times_formatted,
                       'delay': data.loc[:,'delay'].values,
                       'predicted delay': data.loc[:,'pred_delay'].values,
-                      'low': data.loc[:,'low'].values,
-                      'high': data.loc[:,'high'].values
+                      'low': data.loc[:,'pred_delay_low'].values,
+                      'high': data.loc[:,'pred_delay_high'].values
                       }
         fname = '{}/delays_{}.csv'.format(options.vis_path, station)
         io.write_csv(delay_data, fname, fname)
@@ -181,8 +160,8 @@ def main():
                        data.loc[:,'pred_delay'].values,
                        'Delay for station {}'.format(stationName),
                        fname,
-                       data.loc[:,'low'].values,
-                       data.loc[:, 'high'].values)
+                       data.loc[:,'pred_delay_low'].values,
+                       data.loc[:, 'pred_delay_high'].values)
         io._upload_to_bucket(filename=fname, ext_filename=fname)
 
     # Save all station related results to csv and upload them to bucket
@@ -195,8 +174,8 @@ def main():
 
     # Create timeseries of avg actual delay and predicted delay
     all_times = sorted(list(all_times))
-    avg_delay = avg.loc[avg.index.get_level_values('group')=='all','avg_delay'].dropna().values.ravel()
-    avg_pred_delay = avg.loc[avg.index.get_level_values('group')=='all','avg_pred_delay'].dropna().values.ravel()
+    avg_delay = avg.loc[:,'avg_delay'].dropna().values.ravel()
+    avg_pred_delay = avg.loc[:,'avg_pred_delay'].dropna().values.ravel()
 
     # Calculate average over all times and stations
     rmse = math.sqrt(metrics.mean_squared_error(avg_delay, avg_pred_delay))
@@ -220,18 +199,21 @@ def main():
     fname='{}/avg_delays_all_stations.csv'.format(options.vis_path)
     io.write_csv(delay_data, fname, fname)
 
-    for i in np.arange(1,4):
-        fname='{}/avg_group_{}.png'.format(options.vis_path, i)
-        times = avg.index.get_level_values('time').values
-        g_avg_delay = avg.loc[avg.index.get_level_values('group')==i,'avg_delay'].values.ravel()
-        g_avg_pred_delay = avg.loc[avg.index.get_level_values('group')==i,'avg_pred_delay'].values.ravel()
-        g_avg_pred_delay_low = avg.loc[avg.index.get_level_values('group')==i,'avg_pred_delay_low'].values.ravel()
-        g_avg_pred_delay_high = avg.loc[avg.index.get_level_values('group')==i,'avg_pred_delay_high'].values.ravel()
+    for i in np.arange(0,3):
+        fname='{}/avg_group_{}.png'.format(options.vis_path, (i+1))
+        times = groups[i].index.values
+        if len(times) < 2:
+            continue
 
-        viz.plot_delay(all_times,
+        g_avg_delay = groups[i].loc[:, 'avg_delay'].values.ravel()
+        g_avg_pred_delay = groups[i].loc[:, 'avg_pred_delay'].values.ravel()
+        g_avg_pred_delay_low = groups[i].loc[:, 'avg_pred_delay_low'].values.ravel()
+        g_avg_pred_delay_high =  groups[i].loc[:, 'avg_pred_delay_high'].values.ravel()
+
+        viz.plot_delay(times,
                        g_avg_delay,
                        g_avg_pred_delay,
-                       'Average delay for group {}'.format(i),
+                       'Average delay for group {}'.format(i+1),
                        fname,
                        g_avg_pred_delay_low,
                        g_avg_pred_delay_high)

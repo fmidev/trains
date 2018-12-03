@@ -625,8 +625,8 @@ class IO(Manipulator):
                           train_type_column='train_type',
                           location_column='trainstation',
                           time_column='time',
-                          sum_columns=['train count', 'late minutes', 'total late minutes'],
-                          aggs=[]):
+                          sum_columns=['train_count', 'delay', 'total_delay'],
+                          aggs={}):
         """
         Filter traintypes from metadata
 
@@ -1024,7 +1024,7 @@ class IO(Manipulator):
 
         data = data.groupby('trainstation').apply(run_avg).reset_index(drop=True)
         return data
-        
+
 
     #
     # SASSE

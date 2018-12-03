@@ -28,54 +28,44 @@ class Manipulator:
 
         def group(row):
             """
-            Divide stations to three groups based on their latitude
+            Divide stations to three groups based on their latitude (latitudes
+            got from https://ilmatieteenlaitos.fi/saaennusteiden-aluejako)
             """
-            if stationList[row]['lat'] > 65: return 3
-            if stationList[row]['lat'] > 62: return 2
+            if stationList[row]['lat'] > 63.41: return 3
+            if stationList[row]['lat'] > 61.55: return 2
             if stationList[row]['lat'] > 59: return 1
             return 0
 
         # Divide stations to groups
-        df = pd.concat([metadata, pd.DataFrame(pred, columns=['pred_delay'])], axis=1)
+        df = pd.concat([metadata.reset_index(), pd.DataFrame(pred, columns=['pred_delay'])], axis=1)
         df['group'] = df.apply(lambda x: group(x['trainstation']), axis=1)
+        df.sort_values(by=['time', 'trainstation'], inplace=True)
 
-        # Calc quantiles
-        df['low'] = np.nan
-        df['median'] = np.nan
-        df['high'] = np.nan
+        indexed = df.set_index(keys=['time'])
 
-        index = pd.MultiIndex.from_tuples(tuples=(),  names=['time', 'group'])
-        avg = pd.DataFrame(index=index, columns=['avg_delay', 'avg_pred_delay', 'avg_pred_delay_low', 'avg_pred_delay_high'])
-        #df['avg_delay'] = np.nan
-        #df['avg_pred_delay'] = np.nan
-        #df['avg_pred_delay_low'] = np.nan
-        #df['avg_pred_delay_high'] = np.nan
+        avg = pd.DataFrame(columns=['avg_delay', 'avg_pred_delay', 'avg_pred_delay_low', 'avg_pred_delay_high'])
+        avg.loc[:,'avg_delay'] = indexed.loc[:,'delay'].groupby('time').mean()
+        avg.loc[:,'avg_pred_delay'] = indexed.loc[:,'pred_delay'].groupby('time').mean()
 
-        #print(df['time'])
-        #print(len(df['time'].unique()))
-        for t in df['time'].unique():
-            time_mask = (df['time'] == t)
-            #print(t)
-            #print(df.loc[time_mask,'delay'])
-            #print(df.loc[time_mask,'delay'].mean())
-            #sys.exit()
+        groups = []
+        for i in np.arange(0,3):
+            gdf = pd.DataFrame(columns=['avg_delay', 'avg_pred_delay', 'avg_pred_delay_low', 'avg_pred_delay_high'])
+            gdf.loc[:,'avg_delay'] = indexed.loc[indexed['group']==(i+1),'delay'].groupby('time').mean()
+            gdf.loc[:,'avg_pred_delay'] = indexed.loc[indexed['group']==(i+1),'pred_delay'].groupby('time').mean()
+            gdf.loc[:,'avg_pred_delay_low'] = indexed.loc[indexed['group']==(i+1),'pred_delay'].groupby('time').quantile(.1)
+            gdf.loc[:,'avg_pred_delay_high'] = indexed.loc[indexed['group']==(i+1),'pred_delay'].groupby('time').quantile(.9)
 
-            for i in np.arange(1,4):
-                mask = (df['group'] == i) & time_mask
-                df.loc[mask, 'low'] = df.loc[mask,'pred_delay'].quantile(.1)
-                df.loc[mask, 'median'] = df.loc[mask,'pred_delay'].quantile(.5)
-                df.loc[mask, 'high'] = df.loc[mask,'pred_delay'].quantile(.9)
+            s = indexed.loc[indexed['group']==(i+1),'pred_delay'].groupby('time').quantile(.05).to_frame()
+            s2 = indexed.loc[indexed['group']==(i+1),'pred_delay'].groupby('time').quantile(.95).to_frame()
+            for t in s.index:
+                time_mask = (df['time'] == t)
+                mask = time_mask & (df['group'] == (i+1))
+                df.loc[mask, 'pred_delay_low'] = s.loc[t, 'pred_delay']
+                df.loc[mask, 'pred_delay_high'] = s2.loc[t, 'pred_delay']
 
-                avg.loc[(t,i), 'avg_delay'] = df.loc[mask, 'delay'].mean()
-                avg.loc[(t,i), 'avg_pred_delay'] = df.loc[mask, 'pred_delay'].mean()
-                avg.loc[(t,i), 'avg_pred_delay_low'] = df.loc[mask, 'pred_delay'].quantile(.1)
-                avg.loc[(t,i), 'avg_pred_delay_high'] = df.loc[mask, 'pred_delay'].quantile(.9)
+            groups.append(gdf.copy(True))
 
-            avg.loc[(t, 'all'), 'avg_delay'] = df.loc[time_mask, 'delay'].mean()
-            avg.loc[(t, 'all'), 'avg_pred_delay'] = df.loc[time_mask, 'pred_delay'].mean()
-
-        print(avg)
-        return df, avg
+        return groups, avg, df
 
     def read_parameters(self, filename, drop=0):
         """
