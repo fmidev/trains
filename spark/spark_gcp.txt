@@ -1,0 +1,48 @@
+
+We consider the TRAINS project as an instance of a big data problem as
+the data involved is in several gigabytes and also we use machine
+learning techniques in the analysis of the data. Specifically we use
+the Apache Spark [1] framework as a unified analytic engine for a
+large-scale data processing involving fetching the weather data,
+combining it with train data. Also we use Apache Spark in
+preprocessing the combined data that presents the data in a manner
+suited to apply subsequently machine algorithms such as Random forest
+regression and LSTM, one of the neural network algorithms.
+
+Apache Spark is an open source, distributed computing framework that
+extends MapReduce framework. Spark is a unified engine for SQL,
+Machine learning, Streaming and Graph processing. Spark supports
+batch, interactive and stream processing. Spark can access many data
+sources including text, JSON, Hadoop Distributed File System (HDFS),
+Cassandra, HBase, Amazon S3 and many more. Spark with most/all of the
+processing done in memory has potential to perform about 100x faster
+than Hadoop which is another well-known distributed computing engine.
+As the Apache Spark is implemented in Scala, a modern functional
+programming language and built on Java virtual machine (JVM), the code
+is relatively concise, modular and provides ease of
+extendability. Besides Apache Spark has Scala, Java, Python and R
+interfaces and has an interactive Spark shell.
+
+We use Apache Spark in the cluster mode implemented in Google Cloud
+Platform known as Dataproc in our implementation of the Trains project
+data analysis.  We use a Dataproc cluster that consists of eight
+virtual machine instances (VM) with two cores in each VM. Each VM has
+7.5 GB memory and 15 GB hard disk. The weather data is retrieved from
+Smartmet server and is combined with  the Trains data provided by ....  It
+took 3 days (or 8 hours) to do the fetching and preprocessing of the
+data.
+
+The data is then stored as a BigQuery table[3] in Google Cloud
+Platform. BigQuery is Google's fully managed, petabyte scale, low cost
+analytics data storage. We can use SQL queries on BigQuery tables.
+
+We use Apache Spark machine learning libraries for prediction
+analysis. We use the Random Forest Regression algorithm in data
+analysis and calculating the delay predictions.
+
+
+
+[1] Apache Spark, A lightning fast cluster computing
+    https://spark.apache.org/
+[2] Dataproc - Spark Cluster on  Google cloud platform https://cloud.google.com/dataproc/
+[2] BigQuery https://cloud.google.com/bigquery/
