@@ -20,6 +20,8 @@ from lib import io as _io
 from lib import viz as _viz
 from lib import bqhandler as _bq
 from lib import config as _config
+from lib import modelloader as _ml
+from lib import predictor as _predictor
 
 def main():
     """
@@ -29,6 +31,12 @@ def main():
     bq = _bq.BQHandler()
     io = _io.IO(gs_bucket=options.gs_bucket)
     viz = _viz.Viz()
+    model_loader = _ml.ModelLoader(io)
+    predictor = _predictor.Predictor(io, model_loader, options)
+
+    # Mean delay over the whole dataset (both train and validation),
+    # used to calculate Brier Skill
+    mean_delay = 6.011229358531166
 
     starttime, endtime = io.get_dates(options)
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
@@ -39,26 +47,6 @@ def main():
     all_param_names = options.label_params + options.feature_params + options.meta_params
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
-    # Load model
-    if options.tf:
-        io._download_dir_from_bucket(options.save_path, options.save_path, force=True)
-        sess = tf.Session()
-        saver = tf.train.import_meta_graph(options.save_file+'.meta')
-        saver.restore(sess, tf.train.latest_checkpoint(options.save_path))
-        graph = tf.get_default_graph()
-
-        # for i in tf.get_default_graph().get_operations():
-        #     print(i.name)
-        # sys.exit()
-        X = graph.get_tensor_by_name("inputs/X:0")
-        op_y_pred = graph.get_tensor_by_name("out_hidden/y_pred/y_pred:0")
-    else:
-        io._download_from_bucket(options.save_file, options.save_file)
-        predictor = io.load_scikit_model(options.save_file)
-
-#        print(op_y_pred)
-#    sys.exit()
-
     # Init error dicts
     avg_delay = {}
     avg_pred_delay = {}
@@ -66,8 +54,9 @@ def main():
     all_times = set()
 
     station_rmse = {}
-    station_median_abs_err = {}
+    station_mae = {}
     station_r2 = {}
+    station_skill = {}
 
     # If stations are given as argument use them, else use all stations
     stationList = io.get_train_stations(options.stations_file)
@@ -114,61 +103,8 @@ def main():
         times = data.loc[:,'time']
         station_count += 1
 
-        if not options.tf:
-            # Pick feature and label data from all data
-            l_data = data.loc[:,options.meta_params + options.label_params]
-            f_data = data.loc[:,options.meta_params + options.feature_params]
-
-            assert l_data.shape[0] == f_data.shape[0]
-
-            target = l_data['delay'].astype(np.float64).values.ravel()
-            features = f_data.drop(columns=['trainstation', 'time']).astype(np.float64).values
-
         # Run prediction
-        if options.tf:
-            if options.normalize:
-                fname=options.save_path+'/yscaler.pkl'
-                io._download_from_bucket(fname, fname, force=True)
-                yscaler = io.load_scikit_model(fname)
-
-            y_pred, target = [], []
-            logging.info('Predicting... ')
-            start = 0
-            end = options.time_steps
-            first = True
-            while end <= len(times):
-                input_batch, target_batch = io.extract_batch(data,
-                                                             options.time_steps,
-                                                             batch_size=-1,
-                                                             pad_strategy=options.pad_strategy,
-                                                             quantile=options.quantile,
-                                                             start=start,
-                                                             end=end)
-                if len(input_batch) < options.time_steps:
-                    break
-
-                feed_dict={X: input_batch}
-                y_pred_batch = sess.run(op_y_pred, feed_dict=feed_dict).ravel()
-                if options.normalize:
-                    y_pred_batch = yscaler.inverse_transform(y_pred_batch)
-
-                # print(y_pred_batch)
-                if first:
-                    y_pred = list(y_pred_batch)
-                    target = list(target_batch.ravel())
-                    first = False
-                else:
-                    y_pred.append(y_pred_batch[-1])
-                    target.append(target_batch[-1])
-
-                start += 1
-                end += 1
-
-                if end%100 == 0:
-                    logging.info('...step {}/{}'.format(end, len(times)))
-
-        else:
-            y_pred = predictor.predict(features)
+        target, y_pred = predictor.pred(times, data)
 
         if len(y_pred) < 1 or len(target) < 1:
             continue
@@ -196,17 +132,21 @@ def main():
 
         # Calculate errors for given station
         rmse = math.sqrt(metrics.mean_squared_error(target, y_pred))
-        median_abs_err = metrics.median_absolute_error(target, y_pred)
+        mae = metrics.mean_absolute_error(target, y_pred)
         r2 = metrics.r2_score(target, y_pred)
+        rmse_stat = math.sqrt(metrics.mean_squared_error(target, np.full_like(target, mean_delay)))
+        skill = 1 - rmse / rmse_stat
 
         # Put errors to timeseries
         station_rmse[station] = rmse
-        station_median_abs_err[station] = median_abs_err
+        station_mae[station] = mae
         station_r2[station] = r2
+        station_skill[station] = skill
 
-        logging.info('RMSE for station {}: {}'.format(stationName, rmse))
-        logging.info('Mean absolute error for station {}: {}'.format(stationName, median_abs_err))
-        logging.info('R2 score for station {}: {}'.format(stationName, r2))
+        logging.info('RMSE of station {}: {:.4f}'.format(stationName, rmse))
+        logging.info('MAE of station {}: {:.4f}'.format(stationName, mae))
+        logging.info('R2 score of station {}: {:.4f}'.format(stationName, r2))
+        logging.info('Skill (RMSE) of station {}: {:.4f}'.format(stationName, skill))
 
         # Create csv and upload it to pucket
         times_formatted = [t.strftime('%Y-%m-%dT%H:%M:%S') for t in times]
@@ -222,14 +162,16 @@ def main():
     # Save all station related results to csv and upload them to bucket
     fname = '{}/station_rmse.csv'.format(options.vis_path)
     io.dict_to_csv(station_rmse, fname, fname)
-    fname = '{}/station_median_absolute_error.csv'.format(options.vis_path)
-    io.dict_to_csv(station_median_abs_err, fname, fname)
+    fname = '{}/station_mae.csv'.format(options.vis_path)
+    io.dict_to_csv(station_mae, fname, fname)
     fname = '{}/station_r2.csv'.format(options.vis_path)
     io.dict_to_csv(station_r2, fname, fname)
+    fname = '{}/station_skill_rmse.csv'.format(options.vis_path)
+    io.dict_to_csv(station_skill, fname, fname)
 
     # Create timeseries of avg actual delay and predicted delay
     all_times = sorted(list(all_times))
-    print(avg_pred_delay)
+    # print(avg_pred_delay)
     #print(avg_pred_delay)
     for t,l in avg_delay.items():
         avg_delay[t] = sum(l)/len(l)
@@ -240,15 +182,27 @@ def main():
 
     # Calculate average over all times and stations
     rmse = math.sqrt(metrics.mean_squared_error(avg_delay, avg_pred_delay))
-    median_abs_err = metrics.median_absolute_error(avg_delay, avg_pred_delay)
+    rmse_mean = np.mean(list(station_rmse.values()))
+    mae = metrics.mean_absolute_error(avg_delay, avg_pred_delay)
+    mae_mean = np.mean(list(station_mae.values()))
     r2 = metrics.r2_score(avg_delay, avg_pred_delay)
+    rmse_stat = math.sqrt(metrics.mean_squared_error(avg_delay, np.full_like(avg_delay, mean_delay)))
+    skill = 1 - rmse/rmse_stat
+    skill_mean = 1 - rmse_mean/rmse_stat
 
-    logging.info('RMSE for average delay over all stations: {}'.format(rmse))
-    logging.info('Mean absolute error for average delay over all stations: {}'.format(median_abs_err))
-    logging.info('R2 score for average delay over all stations: {}'.format(r2))
+    logging.info('RMSE of average delay over all stations: {:.4f}'.format(rmse))
+    logging.info('Average RMSE of all station RMSEs: {:.4f}'.format(rmse_mean))
+    logging.info('MAE of average delay over all stations: {:.4f}'.format(mae))
+    logging.info('Average MAE of all station MAEs: {:.4f}'.format(mae_mean))
+    logging.info('R2 score of average delay over all stations: {:.4f}'.format(r2))
+    logging.info('Skill score (RMSE) of average delay over all stations: {:.4f}'.format(skill))
+    logging.info('Skill score (avg RMSE) of all stations: {:.4f}'.format(skill_mean))
 
     # Write average data into file
-    avg_errors = {'rmse': rmse, 'mae': median_abs_err, 'r2': r2, 'nro_of_samples': len(avg_delay)}
+    avg_errors = {'rmse': rmse, 'mae': mae, 'r2': r2,
+                  'rmse_mean': rmse_mean, 'mae_mean': mae_mean,
+                  'skill': skill, 'skill_mean': skill_mean,
+                  'nro_of_samples': len(avg_delay)}
     fname = '{}/avg_erros.csv'.format(options.vis_path)
     io.dict_to_csv(avg_errors, fname, fname)
 

@@ -21,9 +21,9 @@ train_types = {'Intercity': 0,
                'Cargo': 2,
                'Other': 3}
 
-a = _bq.BQHandler()
-io = _io.IO()
-viz = _viz.Viz()
+#a = _bq.BQHandler()
+#io = _io.IO()
+#viz = _viz.Viz()
 
 
 def heatmap_day(l_data, passangers, day, locs):
@@ -183,6 +183,9 @@ def main():
     """
 
     #a = mlfdb.mlfdb()
+    a = _bq.BQHandler()
+    io = _io.IO(gs_bucket='trains-data')
+    viz = _viz.Viz()
 
     if not os.path.exists(options.save_path):
         os.makedirs(options.save_path)
@@ -223,7 +226,7 @@ def main():
 
     passangers = io.filter_train_type(labels_df=l_data, train_types=['L','K'], sum_types=True)
     l_data.set_index(pd.to_datetime(l_data.loc[:,'time']), inplace=True)
-    passangers.set_index(pd.to_datetime(passangers.loc[:,'time']), inplace=True)
+    #passangers.set_index(pd.to_datetime(passangers.loc[:,'time']), inplace=True)
 
 
     # ################################################################################
@@ -243,6 +246,14 @@ def main():
         # All passanger trains
         filename = options.save_path+'/hist_all_delays_passanger.png'
         viz.hist_all_delays(passangers.loc[:,statlist], filename)
+
+        # all parameters
+        passangers.replace(-99, np.nan, inplace=True)
+        delayed_data = passangers[passangers.loc[:,'delay'] > 50]
+        d = {'A': passangers, 'B': delayed_data}
+        comp_data = pd.concat(d.values(), axis=1, keys=d.keys())
+        filename = options.save_path+'/histograms_compare.png'
+        viz.all_hist(comp_data, filename=filename)
 
     # ################################################################################
     if 'history' in what:

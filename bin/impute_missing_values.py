@@ -19,8 +19,10 @@ def main():
     times = []
     # times.append({'starttime': dt.datetime.strptime('2009-11-29', "%Y-%m-%d"),
     #               'endtime': dt.datetime.strptime('2018-01-10', "%Y-%m-%d")})
-    times.append({'starttime': dt.datetime.strptime('2014-06-02', "%Y-%m-%d"),
-                  'endtime': dt.datetime.strptime('2018-01-10', "%Y-%m-%d")})
+    # #times.append({'starttime': dt.datetime.strptime('2014-06-02', "%Y-%m-%d"),
+    #              'endtime': dt.datetime.strptime('2018-01-10', "%Y-%m-%d")})
+    times.append({'starttime': dt.datetime.strptime('2009-11-29', "%Y-%m-%d"),
+                  'endtime': dt.datetime.strptime('2014-06-02', "%Y-%m-%d")})
 
     logging.info('Using times: {}'.format(times))
 
