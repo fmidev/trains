@@ -6,3 +6,7 @@ ml-feature-db/
 openshift/
 spark/
 visualizations/
+spark/
+labels_viz_1_0_arch/
+labels_viz_1_1/
+.git/

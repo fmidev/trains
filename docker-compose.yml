@@ -177,7 +177,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-16_params_1} --logging_level ${LOGGING:-INFO} --only_avg 1 #--stations PSL,OL #,VS
+    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-16_params_1} --logging_level ${LOGGING:-INFO} #--only_avg 1 #--stations PSL,OL #,VS
 #############
   vizens:
     volumes:
@@ -198,7 +198,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/visualize_data.py --dataset ${DATASET:-trains-10d-sample} --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-INFO} --save_path labels_vis_1_1 --what ${WHAT:-histograms,history}
+    command: python -u bin/visualize_data.py --dataset ${DATASET:-trains_2009_18_wo_testset} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2018-01-10} --logging_level ${LOGGING:-INFO} --save_path labels_vis_1_1 --what ${WHAT:-histograms}
 #############
   feature_importance:
     volumes:
@@ -208,7 +208,16 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
     image: tervo/ml:cpu
     command: python -u bin/draw_rfr.py --logging_level ${LOGGING:-INFO} --model_file ${MODEL_FILE:-model/model.pkl} --parameters_filename cnf/forecast_parameters_shorten.txt
-
+#############
+  hist:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/histograms.py
 
 
 #############

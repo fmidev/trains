@@ -19,13 +19,13 @@ def main():
     io = _io.IO()
 
     times = []
-    # times.append({'starttime': dt.datetime.strptime('2011-02-01', "%Y-%m-%d"),
-    #               'endtime': dt.datetime.strptime('2011-03-01', "%Y-%m-%d")
-    #              })
+    times.append({'starttime': dt.datetime.strptime('2011-02-01', "%Y-%m-%d"),
+                  'endtime': dt.datetime.strptime('2011-03-01', "%Y-%m-%d")
+                 })
 
-    # times.append({'starttime': dt.datetime.strptime('2016-06-01', "%Y-%m-%d"),
-    #               'endtime': dt.datetime.strptime('2016-07-01', "%Y-%m-%d")
-    # })
+    times.append({'starttime': dt.datetime.strptime('2016-06-01', "%Y-%m-%d"),
+                  'endtime': dt.datetime.strptime('2016-07-01', "%Y-%m-%d")
+    })
 
     times.append({'starttime': dt.datetime.strptime('2017-02-01', "%Y-%m-%d"),
                   'endtime': dt.datetime.strptime('2017-03-01', "%Y-%m-%d")})
@@ -46,9 +46,9 @@ def main():
                            dataset=options.src_dataset,
                            table=options.src_table)
 
-        print(data)
+        #print(data.shape
         data.set_index(['time', 'trainstation'], inplace=True)
-        print(data)
+        #print(data)
         bq.dataset_to_table(data, options.dst_dataset, options.dst_table)
 
 
@@ -56,10 +56,10 @@ if __name__=='__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--project', type=str, default='trains-197305', help='BigQuery project name')
-    parser.add_argument('--src_dataset', type=str, default='trains_2009_18', help='Src dataset name for features')
-    parser.add_argument('--src_table', type=str, default='features', help='Src table name for features')
-    parser.add_argument('--dst_dataset', type=str, default='trains_testset', help='Dst dataset name for features')
-    parser.add_argument('--dst_table', type=str, default='features_1', help='Dst table name for features')
+    parser.add_argument('--src_dataset', type=str, default='trains_data', help='Src dataset name for features')
+    parser.add_argument('--src_table', type=str, default='features_imputed', help='Src table name for features')
+    parser.add_argument('--dst_dataset', type=str, default='trains_data', help='Dst dataset name for features')
+    parser.add_argument('--dst_table', type=str, default='features_imputed_testset', help='Dst table name for features')
 
     parser.add_argument('--logging_level',
                         type=str,

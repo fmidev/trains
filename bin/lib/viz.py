@@ -95,6 +95,14 @@ class Viz:
 
         logging.debug("Saved method comparison chart to " + filename)
 
+    def all_hist(self, df, filename='histograms_compare.png'):
+        """
+        Print histograms from all columns in dataframe
+        """
+        axes = df['A'].hist(figsize=(20,20), bins=50, density=True, label='All delays')
+        axes = df['B'].hist(bins=50, ax = axes, density=True, alpha=0.5, label='Over 50 minutes delays')
+        plt.legend()
+        self._sace(plt, filename)
 
     def label_hist(self, y, classes, labels=[], filename='label_hist.png'):
         logging.debug("Plotting label histogram")

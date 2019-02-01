@@ -1,4 +1,4 @@
-# tensorboard --logdir=/board --host 0.0.0.0 --port 8888 &
+tensorboard --logdir=/board --host 0.0.0.0 --port 8888 &
 
 # python -u bin/train.py --logging_level DEBUG --config_filename cnf/lstm.ini --config_name test
 # python -u bin/train.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_sample_2

@@ -156,7 +156,7 @@ class Manipulator:
         """
         Load scikit model from file
         """
-
+        logging.info('Loading model from file {}...'.format(filename))
         return joblib.load(str(filename))
 
     def get_batch_size(self, data, pad_strategy='pad', quantile=None):
