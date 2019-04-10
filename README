@@ -16,13 +16,22 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-xxx.json
 .                        | root folder, contain dockerfiles and docker-compose
 |- bin                   | executable scripts
 |  |- lib                | libraries
-|     |- model_functions | required functions to load data into the model
+|  |  |- model_functions | required functions to load data into the model
 |- cnf                   | config files
 |- data                  | subset of data as csv
 |- labels_vis_1_0_arch   | visualisation of label data
 |- labels_vis_1_1        | visualisation of label data
-|- ml-feature-db         | deprecated
 |- spark                 | data fetching and pre-processing done with spark
+|- models                | trained models are saved here
+|  |- model_type         | automatically generated, for example lstm
+|  |  |- data_set_name   | automatically generated, for example trains_2009_18_wo_testset
+|  |  |  |- config_name  | automatically generated, for example 16_params_1
+|- results               | validation results are saved here
+|  |- model_type         | automatically generated, for example lstm
+|  |  |- data_set_name   | automatically generated, for example trains_2009_18_wo_testset
+|  |  |  |- config_name  | automatically generated, for example 16_params_1
+|  |- material           | related material like presentations etc.
+|  |- model              | "operationally" ran model is stored here
 ```
 
 ## Config
