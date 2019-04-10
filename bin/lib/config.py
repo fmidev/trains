@@ -87,11 +87,15 @@ def read(options):
         _intval('day_step', 5000)
         _intval('hour_step', 0)
 
+        _intval('epochs', 3)
+
+        _bval('y_avg')
+
         try:
             if options.label_column is None:
                 options.label_column = 'delay'
         except:
-            options.label_column = 'delay'    
+            options.label_column = 'delay'
 
         # linear regression
         _fval('alpha')

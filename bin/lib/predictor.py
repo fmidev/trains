@@ -39,7 +39,7 @@ class Predictor():
             yscaler = self.io.load_scikit_model(fname)
 
         y_pred, target = [], []
-        logging.info('Predicting... ')
+        logging.info('Predicting using tf... ')
         start = 0
         end = self.options.time_steps
         first = True
@@ -49,6 +49,8 @@ class Predictor():
                                                               batch_size=-1,
                                                               pad_strategy=self.options.pad_strategy,
                                                               quantile=self.options.quantile,
+                                                              label_params=self.options.label_params,
+                                                              feature_params=self.options.feature_params,
                                                               start=start,
                                                               end=end)
             if len(input_batch) < self.options.time_steps:

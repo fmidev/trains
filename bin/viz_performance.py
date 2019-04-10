@@ -15,6 +15,7 @@ from tensorflow.python.framework import constant_op
 from tensorflow.contrib import predictor
 
 from sklearn import metrics
+from sklearn.preprocessing import StandardScaler
 
 from lib import io as _io
 from lib import viz as _viz
@@ -87,7 +88,7 @@ def main():
                                     train_type_column='train_type',
                                     location_column='trainstation',
                                     time_column='time',
-                                    sum_columns=['delay'],
+                                    sum_columns=['train_count', 'delay'],
                                     aggs=aggs)
 
         if len(data) == 0:
@@ -96,8 +97,28 @@ def main():
         if options.y_avg_hours is not None:
             data = io.calc_running_delay_avg(data, options.y_avg_hours)
 
+        if options.y_avg:
+            data = io.calc_delay_avg(data)
+
         data.sort_values(by=['time', 'trainstation'], inplace=True)
         logging.info('Processing {} rows...'.format(len(data)))
+
+        if options.normalize:
+            logging.info('Normalizing data...')
+            # TODO download scalers from bucket
+            xscaler = StandardScaler()
+
+            fname = options.save_path+'/yscaler.pkl'
+            yscaler = io.load_scikit_model(fname)
+
+            non_scaled_data = data.loc[:,options.meta_params]
+            labels = data.loc[:, options.label_params].values.reshape((-1, 1))
+
+            scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
+            scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:,options.feature_params]),
+                                           columns=options.feature_params)
+
+            data = pd.concat([non_scaled_data, scaled_features, scaled_labels], axis=1)
 
         # Pick times for creating error time series
         times = data.loc[:,'time']

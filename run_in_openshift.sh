@@ -37,10 +37,10 @@ set -x
 docker build -t tervo/$NAME -f $FILE .
 docker push tervo/$NAME
 
-if [ "$GPU" -gt 0 ]; then
-  CPU="2"
-  MEM="8Gi"
-fi
+#if [ "$GPU" -gt 0 ]; then
+  #CPU="2"
+  #MEM="8Gi"
+#fi
 
 if [ "$GPU" -gt 0 ]; then
   oc run $RUN_NAME --image tervo/$NAME --expose=true --port 8888 --replicas=1 --restart=Never --image-pull-policy='Always' --overrides='

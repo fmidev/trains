@@ -83,17 +83,21 @@ def main():
                   parameters=all_param_names)
 
     data = bq.get_rows()
+
     data = io.filter_train_type(labels_df=data,
                                 train_types=options.train_types,
                                 sum_types=True,
                                 train_type_column='train_type',
                                 location_column='trainstation',
                                 time_column='time',
-                                sum_columns=['delay'],
+                                sum_columns=['train_count','delay'],
                                 aggs=aggs)
 
     if options.y_avg_hours is not None:
         data = io.calc_running_delay_avg(data, options.y_avg_hours)
+
+    if options.y_avg:
+        data = io.calc_delay_avg(data)
 
     data.sort_values(by=['time', 'trainstation'], inplace=True)
 
@@ -102,13 +106,22 @@ def main():
         xscaler = StandardScaler()
         yscaler = StandardScaler()
 
-        non_scaled_data = data.loc[:,options.meta_params+ ['train_type']]
-        labels = data.loc[:, 'delay'].values.reshape((-1, 1))
+        print(data.loc[:,['delay', 'trainstation', 'train_count', 'time']])
+
+        non_scaled_data = data.loc[:,options.meta_params]
+        labels = data.loc[:, options.label_params].values.reshape((-1, 1))
+
+        print(labels.shape)
+        print(data.loc[:, options.label_params].values.shape)
+        print(np.unique(labels))
+
+        print(data[data['delay'].isnull()])
+        print(labels[np.isnan(labels)])
 
         yscaler.fit(labels)
         scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
-        scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:, options.feature_params]),
-                                       columns=options.feature_params)
+        scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:,options.feature_params]),
+                                           columns=options.feature_params)
 
         data = pd.concat([non_scaled_data, scaled_features, scaled_labels], axis=1)
 
@@ -130,7 +143,13 @@ def main():
         io._upload_to_bucket(filename=fname, ext_filename=fname)
 
     data_train, data_test = train_test_split(data, test_size=0.33)
-    X_test, y_test = io.extract_batch(data_test, options.time_steps, batch_size=None, pad_strategy=options.pad_strategy, quantile=options.quantile)
+    X_test, y_test = io.extract_batch(data_test,
+                                      options.time_steps,
+                                      batch_size=None,
+                                      pad_strategy=options.pad_strategy,
+                                      quantile=options.quantile,
+                                      label_params=options.label_params,
+                                      feature_params=options.feature_params)
 
     # Define model
     batch_size = io.get_batch_size(data_train, options.pad_strategy, quantile=options.quantile)
@@ -156,11 +175,22 @@ def main():
     train_step = 0
     start = 0
     while True:
-        # If slow is set, go forward one time step at time, else proceed whole batch size
+        # If slow is set, go forward one time step at time,
+        # else proceed whole batch size
         if options.slow:
-            X_train, y_train = io.extract_batch(data_train, options.time_steps, start=start, pad_strategy=options.pad_strategy, quantile=options.quantile)
+            X_train, y_train = io.extract_batch(data_train,
+                                                options.time_steps,
+                                                start=start,
+                                                pad_strategy=options.pad_strategy, quantile=options.quantile,
+                                                label_params=options.label_params,
+                                                feature_params=options.feature_params)
         else:
-            X_train, y_train = io.extract_batch(data_train, options.time_steps, train_step, pad_strategy=options.pad_strategy, quantile=options.quantile)
+            X_train, y_train = io.extract_batch(data_train,
+                                                options.time_steps,
+                                                train_step,
+                                                pad_strategy=options.pad_strategy, quantile=options.quantile,
+                                                label_params=options.label_params,
+                                                feature_params=options.feature_params)
 
         if(len(X_train) < options.time_steps):
             break
@@ -190,6 +220,7 @@ def main():
         else:
             if train_step == 0:
                 logging.info('Training...')
+
             feed_dict = {model.X: X_train,
                          model.y: y_train}
             _, loss, train_summary = sess.run(

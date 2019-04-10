@@ -188,7 +188,7 @@ class Manipulator:
 
         return b
 
-    def extract_batch(self, data, n_timesteps, batch_num=0, batch_size=None, pad_strategy='pad', quantile=None, start=None, end=None):
+    def extract_batch(self, data, n_timesteps, batch_num=0, batch_size=None, pad_strategy='pad', quantile=None, start=None, end=None, feature_params=[], label_params=[]):
         """
         Extract and/or preprocess batch from data.
 
@@ -261,8 +261,9 @@ class Manipulator:
                 timestep_values = timestep_values.sample(batch_size)
 
             # pd dataframe to np array
-            timestamp_values = timestep_values.drop(columns=['time', 'trainstation', 'delay', 'train_type']).astype(np.float32).values
-            label_values = timestep_values.loc[:,'delay'].astype(np.float32).values
+            #timestamp_values = timestep_values.drop(columns=['time', 'trainstation', 'delay', 'train_type']).astype(np.float32).values
+            timestamp_values = timestep_values.loc[:, feature_params].astype(np.float32).values
+            label_values = timestep_values.loc[:, label_params].astype(np.float32).values.ravel()
 
             #print(pd.DataFrame(label_values))
             # if pad_strategy is pad and timestep is too small, pad it with -99

@@ -10,6 +10,8 @@ from sklearn import metrics
 class ModelLoader():
 
     model_loaded = False
+    y_scaler_loaded = False
+    x_scaler_loaded = False
 
     def __init__(self, io):
         self.io = io
@@ -47,3 +49,4 @@ class ModelLoader():
             self.model_loaded = True
 
         return self.predictor
+    

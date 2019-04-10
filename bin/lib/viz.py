@@ -20,7 +20,7 @@ from os.path import basename
 from datetime import datetime as dt
 import matplotlib.dates as mdates
 from matplotlib.dates import MO, TU, WE, TH, FR, SA, SU
-
+from math import ceil
 
 class Viz:
 
@@ -485,7 +485,8 @@ class Viz:
         #test_loss = history.history['val_loss']
 
         # Create count of the number of epochs
-        dashes = ['--', '-', '.', '-o-']
+        dashes = ['--', '-', ':', '-.']
+        colors = ['r', 'g', 'b', 'y', 'm']
         lns = []
         axes = {'Loss': ax1}
         axes['Loss'].set_ylabel('Loss')
@@ -502,21 +503,24 @@ class Viz:
 
             for metric, lab in metrics.items():
                 dash = dashes[i%len(dashes)]
-                lns += axes[ax].plot(epoch_count, history[metric], color='b', linestyle=dash, label='Training '+lab)
-                lns += axes[ax].plot(epoch_count, history['val_'+metric], color='g', linestyle=dash, label='Validation '+lab)
+                c1 = colors[count%len(colors)]
+                c2 = colors[(count+1)%len(colors)]
+                lns += axes[ax].plot(epoch_count, history[metric], color=c1, linestyle=dash, label='Training '+lab)
+                lns += axes[ax].plot(epoch_count, history['val_'+metric], color=c2, linestyle=dash, label='Validation '+lab)
                 count += 2
-            i+=1
-
-
+                i+=1
 
         #ax2 = ax1.twinx()
         #lns3 = ax2.plot(epoch_count, training_loss, 'y-', label='Training loss')
         #lns4 = ax2.plot(epoch_count, test_loss, 'g-', label='Validation loss')
         #ax2.set_ylabel('Loss')
+        ncol = count
+        if count > 4:
+            ncol = ceil(count/2)
 
         labs = [l.get_label() for l in lns]
-        ax1.legend(lns, labs, loc='upper center', bbox_to_anchor=(0.5, 1.05),
-                   ncol=count, frameon=False, shadow=True)
+        ax1.legend(lns, labs, loc='upper center',# bbox_to_anchor=(0.5, 1.05),
+                   ncol=ncol, frameon=False, shadow=True)
 
         # ax1.legend(lns, labs, loc=0, frameon=False)
         plt.xlabel('Epoch')
