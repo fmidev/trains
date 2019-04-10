@@ -1009,6 +1009,58 @@ class IO(Manipulator):
 
         return res
 
+    def classify(self, data, limits=[10,50,100]):
+        """
+        Add new column 'class' to the dataframe based on delay
+
+        data : Dataframe
+               Dataframe with 'delay' column
+
+        return : DataFrame
+                 Same dataframe with added 'class' column
+        """
+        logging.info('Classifying rows...')
+
+        def classify(x):
+            _class = len(limits)
+            i=1
+            for l in reversed(limits):
+                if x['delay'] <= l:
+                    _class = len(limits)-i
+                i += 1
+            return _class
+
+        data['class'] = data.apply(classify, axis=1)
+
+        return data
+
+
+    def calc_delay_avg(self, data):
+        """
+        Calculate average delay (divide delay by train count)
+
+        data : Pandas DataFrame
+               data with columns 'delay' and 'train_count'
+
+        return : dict
+                 data frame with 'delay' replaced with avg delay
+        """
+        logging.info('Calculating average delay...')
+
+        def avg(x):
+            if x['train_count'] < 1 or np.isnan(x['train_count']):
+                logging.error('Errornous train count ({})'.format(x['train_count']))
+                return 0
+            else:
+                #print(x['delay'])
+                #print(x['train_count'])
+                #print('...')
+                return x['delay']/x['train_count']
+
+        data['delay'] = data.apply(avg , axis=1)
+
+        return data
+
     def calc_running_delay_avg(self, data, hours):
         """
         Calculate running average for delay

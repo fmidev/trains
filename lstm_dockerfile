@@ -16,4 +16,5 @@ RUN mkdir /board && chmod 777 /board
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-CMD sh /a/bin/run_lstm.sh
+# CMD python -u /a/bin/classify.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_class_avg_1
+CMD python -u /a/bin/classify.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_class_balanced_1

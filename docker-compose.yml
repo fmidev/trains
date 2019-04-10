@@ -70,6 +70,18 @@ services:
     command: python -u bin/sep_testset.py --logging_level ${LOGGING:-INFO}
 
 #############
+  balance:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/balance_dataset.py --logging_level ${LOGGING:-INFO}
+
+#############
   impute:
     volumes:
       - ~:/root:ro
@@ -147,7 +159,20 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/train.py --config_filename cnf/lstm.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/train.py --config_filename cnf/lstm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+
+
+  ############
+  lstm_class:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/classify.py --config_filename cnf/lstm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
 
 

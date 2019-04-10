@@ -1,0 +1,8 @@
+FROM tervo/ml:cpu
+
+ADD bin /a/bin
+ADD cnf /a/cnf
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+
+CMD python -u bin/balance_dataset.py --logging_level INFO --src_dataset trains_data  --src_table features_wo_testset --dst_dataset trains_data --dst_table features_balanced_wo_testset
