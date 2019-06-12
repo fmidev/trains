@@ -1,0 +1,19 @@
+FROM tervo/ml:cpu
+
+RUN apt-get install locales
+RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+# RUN dpkg-reconfigure locales
+
+ADD bin /a/bin
+ADD cnf /a/cnf
+
+RUN chmod 777 /a
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+
+#CMD python -u bin/train_gmm.py --logging_level INFO --config_filename cnf/gmm_bgm.ini --config_name gmm_winters_1
+CMD python -u bin/classify_scikit_gmm.py --logging_level INFO --config_filename cnf/gmm_bgm.ini --config_name gmm_bgm_winters_1
