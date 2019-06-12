@@ -54,12 +54,30 @@ def read(options):
         options.meta_params = options.meta_params.split(',')
 
         try:
+            options.gmm_params = options.gmm_params.split(',')
+        except:
+            pass
+
+        try:
             options.train_types = options.train_types.split(',')
         except:
             options.train_types = ['K', 'L']
 
+        try:
+            options.train_stations = options.train_stations.split(',')
+        except:
+            options.train_stations = None
+
+        try:
+            options.model_type = options.model_type
+        except:
+            options.model_type = 'scikit'
+
         _path('save_path', 'models')
-        options.save_file = options.save_path+'/model.pkl'
+        if options.model_type == 'keras':
+            options.save_file = options.save_path+'/model.h5'
+        else:
+            options.save_file = options.save_path+'/model.pkl'
 
         _path('output_path', 'results')
         options.vis_path = options.output_path+'/validation_testset'
@@ -86,8 +104,10 @@ def read(options):
         _intval('y_avg_hours')
         _intval('day_step', 5000)
         _intval('hour_step', 0)
-
+        _bval('month')
+        _bval('only_winters')
         _intval('epochs', 3)
+        _bval('balance')
 
         _bval('y_avg')
 
@@ -96,6 +116,9 @@ def read(options):
                 options.label_column = 'delay'
         except:
             options.label_column = 'delay'
+
+        if not hasattr(options, 'reason_code_table'):
+            options.reason_code_table = None
 
         # linear regression
         _fval('alpha')
@@ -133,9 +156,19 @@ def read(options):
         _bval('kmeans')
         _intval('n_clusters')
 
+        # BayesianGaussianMixture (bgm)
+        _intval('n_components', 4)
+
+        # autoencoders
+        _intval('class_limit', 4)
+
+        # binary
+        _intval('delay_count_limit')
+
         # other
         _intval('pca_components')
         _intval('dbscan')
+        _bval('feature_selection')
 
 
         return options

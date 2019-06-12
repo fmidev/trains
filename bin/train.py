@@ -80,7 +80,8 @@ def main():
                   project=options.project,
                   dataset=options.feature_dataset,
                   table=options.feature_table,
-                  parameters=all_param_names)
+                  parameters=all_param_names,
+                  only_winters=options.only_winters)
 
     data = bq.get_rows()
 
@@ -106,22 +107,13 @@ def main():
         xscaler = StandardScaler()
         yscaler = StandardScaler()
 
-        print(data.loc[:,['delay', 'trainstation', 'train_count', 'time']])
-
         non_scaled_data = data.loc[:,options.meta_params]
-        labels = data.loc[:, options.label_params].values.reshape((-1, 1))
-
-        print(labels.shape)
-        print(data.loc[:, options.label_params].values.shape)
-        print(np.unique(labels))
-
-        print(data[data['delay'].isnull()])
-        print(labels[np.isnan(labels)])
+        labels = data.loc[:, options.label_params].astype(np.float32).values.reshape((-1, 1))
 
         yscaler.fit(labels)
         scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
-        scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:,options.feature_params]),
-                                           columns=options.feature_params)
+        scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:,options.feature_params].astype(np.float32)),
+                                       columns=options.feature_params)
 
         data = pd.concat([non_scaled_data, scaled_features, scaled_labels], axis=1)
 
@@ -181,14 +173,16 @@ def main():
             X_train, y_train = io.extract_batch(data_train,
                                                 options.time_steps,
                                                 start=start,
-                                                pad_strategy=options.pad_strategy, quantile=options.quantile,
+                                                pad_strategy=options.pad_strategy,
+                                                quantile=options.quantile,
                                                 label_params=options.label_params,
                                                 feature_params=options.feature_params)
         else:
             X_train, y_train = io.extract_batch(data_train,
                                                 options.time_steps,
                                                 train_step,
-                                                pad_strategy=options.pad_strategy, quantile=options.quantile,
+                                                pad_strategy=options.pad_strategy,
+                                                quantile=options.quantile,
                                                 label_params=options.label_params,
                                                 feature_params=options.feature_params)
 
@@ -237,13 +231,6 @@ def main():
         val_loss, rmse, mse, mae, y_pred, summary = sess.run(
             [model.loss, model.rmse, model.mse, model.mae, model.y_pred, merged_summary_op],
             feed_dict=feed_dict)
-
-        # print('y_pred:')
-        # print(np.rint(yscaler.inverse_transform(y_pred)).astype(int))
-        # print('y_test:')
-        # print(np.rint(yscaler.inverse_transform(y_test)).astype(int))
-        # #rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-        #mae = mean_absolute_error(y_test, y_pred)
 
         train_mse.append(loss)
         mses.append(mse)

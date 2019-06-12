@@ -5,6 +5,8 @@ from tensorflow.python.estimator.export import export
 from tensorflow.python.framework import constant_op
 from tensorflow.contrib import predictor
 
+from keras.models import load_model
+
 from sklearn import metrics
 
 class ModelLoader():
@@ -15,6 +17,34 @@ class ModelLoader():
 
     def __init__(self, io):
         self.io = io
+
+    def load_scalers(self, save_path):
+        """
+        Load Scalers
+        """
+        fname=save_path+'/xscaler.pkl'
+        self.io._download_from_bucket(fname, fname, force=True)
+        xscaler = self.io.load_scikit_model(fname)
+
+        fname=save_path+'/yscaler.pkl'
+        self.io._download_from_bucket(fname, fname, force=True)
+        yscaler = self.io.load_scikit_model(fname)
+
+        return xscaler, yscaler
+
+    def load_keras_model(self, save_path, save_file):
+        """
+        Load tf model
+        """
+        if not self.model_loaded:
+            logging.info('Loading model from {}'.format(save_path))
+
+            self.io._download_dir_from_bucket(save_path, save_path, force=True)
+            print(save_file)
+            self.model = load_model(save_file)
+            self.model_loaded = True
+
+        return self.model
 
     def load_tf_model(self, save_path, save_file):
         """
@@ -49,4 +79,3 @@ class ModelLoader():
             self.model_loaded = True
 
         return self.predictor
-    

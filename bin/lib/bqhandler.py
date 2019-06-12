@@ -26,45 +26,61 @@ class BQHandler(object):
         self.locations = None
         self.order = None
         self.batch_size = None
+        self.reason_code_table = None
+        self.where = None
 
     def set_params(self,
-                   starttime,
-                   endtime,
                    batch_size=None,
-                   loc_col='loc_name',
+                   loc_col=None,
                    project=None,
                    dataset=None,
                    table=None,
-                   parameters=['*'],
+                   parameters=None,
                    locations=None,
-                   order=None):
+                   where=None,
+                   order=None,
+                   only_winters=False,
+                   reason_code_table=None):
         """
         Set params to be used for get_batch function
         """
-        self.starttime = starttime
-        self.endtime = endtime
-        self.batch_size = batch_size
-        self.loc_col = loc_col
+        #self.starttime = starttime
+        #self.endtime = endtime
+        if self.batch_size is not None:
+            self.batch_size = batch_size
 
-        if project is None:
-            self.project = self.tables['project']
-        else:
+        if loc_col is not None:
+            self.loc_col = loc_col
+
+        if project is not None:
             self.project = project
 
-        if dataset is None:
-            self.dataset = self.tables['dataset']
-        else:
+        if dataset is not None:
             self.dataset = dataset
 
-        if table is None:
-            self.table = self.tables['feature_table']
-        else:
+        if table is not None:
             self.table = table
 
-        self.parameters = parameters
-        self.locations = locations
+        if only_winters is not None:
+            self.only_winters = only_winters
+
+        if where is not None:
+            self.where = where
+
+        if parameters is not None:
+            self.parameters = parameters
+
+        if locations is not None:
+            self.locations = locations
+
+        if order is not None:
+            self.order = order
+
+        if reason_code_table is not None:
+            self.reason_code_table = reason_code_table
+
         self.batch_num = 0
-        self.order = order
+
 
     def get_batch_num(self):
         """
@@ -83,16 +99,18 @@ class BQHandler(object):
         logging.debug(sql)
         return self._query(sql)
 
-    def get_rows(self,
-                 starttime=None,
-                 endtime=None,
-                 loc_col=None,
-                 project=None,
-                 dataset=None,
-                 table=None,
-                 parameters=['*'],
-                 locations=None,
-                 order=None):
+    def get_rows(self, *args, **kwargs):
+                 # starttime=None,
+                 # endtime=None,
+                 # loc_col=None,
+                 # project=None,
+                 # dataset=None,
+                 # table=None,
+                 # parameters=['*'],
+                 # locations=None,
+                 # where=None,
+                 # order=None,
+                 # only_winters=False):
         """
         Get all feature rows from given dataset. All arguments can be given here or in set_params method
 
@@ -112,18 +130,23 @@ class BQHandler(object):
         returns : pd dataframe
         """
 
-        if starttime is not None: self.starttime = starttime
-        if endtime is not None: self.endtime = endtime
-        if loc_col is not None: self.loc_col = loc_col
-        if project is not None: self.project = project
-        if dataset is not None: self.dataset = dataset
-        if table is not None: self.table = table
-        if parameters is not None:
-            self.parameters = parameters
-        else:
-            self.parameters = ['*']
-        if locations is not None: self.locations = locations
-        if order is not None: self.order = order
+        # if starttime is not None: self.starttime = starttime
+        # if endtime is not None: self.endtime = endtime
+        # if loc_col is not None: self.loc_col = loc_col
+        # if project is not None: self.project = project
+        # if dataset is not None: self.dataset = dataset
+        # if table is not None: self.table = table
+        # if parameters is not None:
+        #     self.parameters = parameters
+        # else:
+        #     self.parameters = ['*']
+        # if locations is not None: self.locations = locations
+        # if order is not None: self.order = order
+        # self.only_winters = only_winters
+        # self.where = where
+
+        self.set_params(**kwargs)
+        self.starttime, self.endtime = args
 
         # If batch size is set, query data in batches
         if self.batch_size is not None:
@@ -184,25 +207,55 @@ class BQHandler(object):
         return result.to_dataframe()
 
     def _format_query(self, offset=None):
+        """
+        Format query based on options
+
+        TODO Exclude: T1,P2,R1,R3,V4,K6
+        spec. include I1,I2
+        """
         timeformat = '%Y-%m-%d %H:%M:%S'
+
+        parameters = parameters = ['a.{}'.format(param) for param in self.parameters]
+        from_clause = '`{project}.{dataset}.{table}` a'.format(project=self.project,
+                                                               dataset=self.dataset,
+                                                               table=self.table)
+        if self.reason_code_table is not None:
+            parameters += ['count']
+            from_clause = '''
+            `{project}.{dataset}.{table}` a
+            LEFT JOIN `{project}.{dataset}.{reason_table}` b
+            ON (a.train_type=b.train_type AND a.trainstation=b.end_station AND a.time=b.time)
+            '''.format(project=self.project,
+                       dataset=self.dataset,
+                       table=self.table,
+                       reason_table=self.reason_code_table)
+
         sql = '''
-        SELECT {params} FROM `{project}.{dataset}.{table}`
-        WHERE time >= TIMESTAMP("{starttime}")
-        AND time < TIMESTAMP("{endtime}") '''.format(
-            params=','.join(self.parameters),
+        SELECT {params} FROM {from_clause}
+        WHERE a.time >= TIMESTAMP("{starttime}")
+        AND a.time < TIMESTAMP("{endtime}") '''.format(
+            from_clause = from_clause,
+            params=','.join(parameters),
             starttime=self.starttime.strftime(timeformat),
-            endtime=self.endtime.strftime(timeformat),
-            project=self.project,
-            dataset=self.dataset,
-            table=self.table
+            endtime=self.endtime.strftime(timeformat)
             )
 
+        if self.reason_code_table is not None:
+            sql += ' AND b.code NOT IN ("T1","P2","R1","R3","V4","K6")'
+
         if self.locations is not None:
-            sql += ' AND {loc_col} in ({locations})'.format(loc_col=self.loc_col,
+            sql += ' AND a.{loc_col} in ({locations})'.format(loc_col=self.loc_col,
             locations='"'+'","'.join(self.locations)+'"')
 
+        if self.only_winters:
+            sql += ' AND EXTRACT(MONTH FROM a.time) IN (1,2,3,4,11,12)'
+
+        if self.where is not None:
+            for col, value in self.where.iteritems():
+                sql +=' AND a.{}=a.{}'.format(col, value)
+
         if self.order is not None:
-            sql += ' ORDER BY {}'.format(','.join(self.order))
+            sql += ' ORDER BY a.{}'.format(','.join(self.order))
 
         if offset is not None:
             sql += ' LIMIT {limit} OFFSET {offset}'.format(limit=self.batch_size, offset=offset)

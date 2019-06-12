@@ -103,22 +103,24 @@ def main():
         data.sort_values(by=['time', 'trainstation'], inplace=True)
         logging.info('Processing {} rows...'.format(len(data)))
 
-        if options.normalize:
-            logging.info('Normalizing data...')
-            # TODO download scalers from bucket
-            xscaler = StandardScaler()
-
-            fname = options.save_path+'/yscaler.pkl'
-            yscaler = io.load_scikit_model(fname)
-
-            non_scaled_data = data.loc[:,options.meta_params]
-            labels = data.loc[:, options.label_params].values.reshape((-1, 1))
-
-            scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
-            scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:,options.feature_params]),
-                                           columns=options.feature_params)
-
-            data = pd.concat([non_scaled_data, scaled_features, scaled_labels], axis=1)
+        # if options.normalize:
+        #     logging.info('Normalizing data...')
+        #     # TODO download scalers from bucket
+        #
+        #     fname = options.save_path+'/xscaler.pkl'
+        #     xscaler = io.load_scikit_model(fname)
+        #
+        #     fname = options.save_path+'/yscaler.pkl'
+        #     yscaler = io.load_scikit_model(fname)
+        #
+        #     non_scaled_data = data.loc[:,options.meta_params + options.label_params]
+        #     #labels = data.loc[:, options.label_params].values.reshape((-1, 1))
+        #
+        #     #scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
+        #     scaled_features = pd.DataFrame(xscaler.transform(data.loc[:,options.feature_params]),
+        #                                    columns=options.feature_params)
+        #
+        #     data = pd.concat([non_scaled_data, scaled_features], axis=1)
 
         # Pick times for creating error time series
         times = data.loc[:,'time']
@@ -141,7 +143,9 @@ def main():
                     avg_delay[t].append(target[i])
                     avg_pred_delay[t].append(y_pred[i])
             except IndexError as e:
-                logging.error(e)
+                # LSTM don't have first time steps because it don't
+                # have necessary history
+                pass
             i += 1
 
         # For creating visualisation

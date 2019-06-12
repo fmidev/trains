@@ -56,7 +56,7 @@ class LSTM(object):
 
 
     def add_cell(self):
-        lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden, state_is_tuple=True)
+        lstm_cell = tf.contrib.rnn.LSTMCell(self.n_hidden, state_is_tuple=True)
         with tf.name_scope('initial_state'):
             self.cell_outputs, self.cell_final_state = tf.nn.dynamic_rnn(lstm_cell,
                                                                          self.l_in_y_drop,

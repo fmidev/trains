@@ -5,4 +5,6 @@ ADD cnf /a/cnf
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-CMD python -u bin/balance_dataset.py --logging_level INFO --src_dataset trains_data  --src_table features_wo_testset --dst_dataset trains_data --dst_table features_balanced_wo_testset
+#CMD python -u bin/balance_dataset.py --logging_level INFO --src_dataset trains_data --src_table features_wo_testset --dst_dataset trains_data --dst_table features_classes_wo_testset --no_balance
+
+CMD python -u bin/balance_dataset.py --logging_level INFO --src_dataset trains_data --src_table features_testset --dst_dataset trains_data --dst_table features_classes_testset --no_balance

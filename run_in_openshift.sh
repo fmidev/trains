@@ -33,9 +33,13 @@ esac
 done
 
 RUN_NAME=${NAME//[_:]/-}-$RANDOM
+#RUN_NAME=${NAME//[_:]/-}
 set -x
 docker build -t tervo/$NAME -f $FILE .
 docker push tervo/$NAME
+
+
+ oc import-image tervo/$NAME --from=tervo/$NAME --confirm=true
 
 #if [ "$GPU" -gt 0 ]; then
   #CPU="2"
@@ -157,5 +161,6 @@ else
     }
   }'
 fi
-
+sleep 15
+oc logs --follow $RUN_NAME
 #oc expose service $RUN_NAME

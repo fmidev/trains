@@ -79,7 +79,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/balance_dataset.py --logging_level ${LOGGING:-INFO}
+    command: python -u bin/balance_dataset.py --logging_level ${LOGGING:-INFO} --src_dataset trains_data  --src_table features_wo_testset --dst_dataset trains_data --dst_table features_balanced_test --no_balance
 
 #############
   impute:
@@ -114,7 +114,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --config_filename cnf/lr.ini --config_name  ${CONFIG_NAME:-all_all_1} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/train_scikit.py --config_filename cnf/lr.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 #############
   svr:
     volumes:
@@ -146,7 +146,7 @@ services:
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
     image: tervo/gpflow
-    command: python -u bin/train_gpflow.py --config_filename cnf/gp.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/train_gpflow.py --config_filename cnf/gp.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
 
 #############
@@ -159,7 +159,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/train.py --config_filename cnf/lstm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+    command: python -u bin/train_lstm.py --config_filename cnf/lstm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
 
   ############
@@ -173,8 +173,59 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/classify.py --config_filename cnf/lstm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+  ############
+  autoencoder:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/train_autoencoder.py --config_filename cnf/autoencoder.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+  ############
+  class:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/classify_scikit.py --config_filename ${CONFIG_FILENAME:-cnf/rfc.ini} --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+  class_gmm:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/classify_scikit_gmm.py --config_filename ${CONFIG_FILENAME:-cnf/gmm_bgm.ini} --config_name ${CONFIG_NAME:-test_gmm} --logging_level ${LOGGING:-INFO}
+  gmm:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/train_gmm.py --config_filename cnf/gmm_bgm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
-
+  binary:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/classify_transactions_scikit.py --config_filename cnf/binary.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
 #############
   repr:
@@ -202,7 +253,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       - HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
-    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-16_params_1} --logging_level ${LOGGING:-INFO} #--only_avg 1 #--stations PSL,OL #,VS
+    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/lstm.ini} --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO} --stations PSL,OL #,VS#--only_avg 1 #--stations PSL,OL #,VS
 #############
   vizens:
     volumes:
@@ -244,6 +295,19 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/histograms.py
 
+#############
+  feature_selection:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/feature_selection.py --config_filename cnf/lr.ini --config_name  ${CONFIG_NAME:-lasso_feature_selection} --logging_level ${LOGGING:-INFO}
+
+
 
 #############
   board:
@@ -264,6 +328,7 @@ services:
     command: python -u bin/get_prediction_scikit.py --logging_level ${LOGGING:-INFO} --dev ${DEV:-1} --model_file ${MODEL_FILE:-model/model.pkl} --prec6h 0 --parameters_filename cnf/16_params_1.txt
 
 
+
   jup:
       volumes:
         - ~/Dropbox/tyot/trains:/home/jovyan/work
@@ -271,4 +336,4 @@ services:
         - GOOGLE_APPLICATION_CREDENTIALS=/home/jovyan/work/cnf/TRAINS-full.json
       image: tervo/pystan
       ports:
-        - "81:8888"
+        - "80:8888"

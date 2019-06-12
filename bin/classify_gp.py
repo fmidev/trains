@@ -14,10 +14,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import IncrementalPCA
 from sklearn.utils import class_weight
 
-from keras.preprocessing.sequence import TimeseriesGenerator
-from keras.utils import to_categorical
-from keras.callbacks import TensorBoard
-
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
@@ -43,29 +39,6 @@ def log_class_dist(data):
     logging.info('Class sizes: 0: {} ({:.02f}%), 1: {} ({:.02f}%), 2: {} ({:.02f}%), 3: {} ({:.02f}%)'.format(c0, c0/c_all*100, c1, c1/c_all*100, c2, c2/c_all*100, c3, c3/c_all*100))
 
 
-def report_cv_results(results, filename=None, n_top=3):
-    """
-    Write cross validation results to file.
-    """
-    res = ""
-    for i in range(1, n_top + 1):
-        candidates = np.flatnonzero(results['rank_test_score'] == i)
-        for candidate in candidates:
-            res += "Model with rank: {0}\n".format(i)
-            res += "Mean validation score: {0:.3f} (std: {1:.3f})\n".format(
-                  results['mean_test_score'][candidate],
-                  results['std_test_score'][candidate])
-            res += "Parameters: {0}\n".format(results['params'][candidate])
-            res += "\n"
-
-    if filename is not None:
-        with open(filename, 'w') as f:
-            f.write(res)
-
-    logging.info(res)
-
-
-
 def main():
     """
     Main program
@@ -79,12 +52,13 @@ def main():
     viz = _viz.Viz()
 
     starttime, endtime = io.get_dates(options)
-    #save_path = options.save_path+'/'+options.config_name
 
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
                                                                   starttime.strftime('%Y-%m-%d'),
                                                                   endtime.strftime('%Y-%m-%d')))
 
+    # In classification use always class as label param
+    option.label_params = 'class'
 
     all_param_names = options.label_params + options.feature_params + options.meta_params
     aggs = io.get_aggs_from_param_names(options.feature_params)
@@ -113,25 +87,7 @@ def main():
                                 sum_columns=['train_count','delay'],
                                 aggs=aggs)
 
-    if options.y_avg_hours is not None:
-        data = io.calc_running_delay_avg(data, options.y_avg_hours)
-
-    if options.y_avg:
-        data = io.calc_delay_avg(data)
-
-    # Classify rows
-    print(data.columns.values)
-    #if 'class' not in data.columns.values:
-    #    data = io.classify(data)
-
     log_class_dist(data.loc[:,'class'])
-
-    #c0 = sum((data['class'] < 1))
-    #c1 = sum((data['class'] > 0) & (data['class'] < 2))
-    #c2 = sum((data['class'] > 1) & (data['class'] < 3))
-    #c3 = sum((data['class'] > 2))
-    #c_all = len(data)
-    #logging.info('Class sizes: 0: {} ({:.02f}%), 1: {} ({:.02f}%), 2: {} ({:.02f}%), 3: {} ({:.02f}%)'.format(c0, c0/c_all*100, c1, c1/c_all*100, c2, c2/c_all*100, c3, c3/c_all*100))
 
     data.sort_values(by=['time', 'trainstation'], inplace=True)
 

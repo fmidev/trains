@@ -16,6 +16,6 @@ RUN mkdir /board && chmod 777 /board
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-# CMD python -u /a/bin/classify.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_class_avg_1
-# CMD python -u /a/bin/classify.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_class_balanced_1
-CMD python -u /a/bin/train_lstm.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_fast_winters_1
+#CMD python -u /a/bin/train_autoencoder.py --logging_level INFO --config_filename cnf/autoencoder.ini --config_name class_1
+#CMD python -u /a/bin/train_autoencoder.py --logging_level INFO --config_filename cnf/autoencoder.ini --config_name class_1_2
+CMD python -u /a/bin/train_autoencoder.py --logging_level INFO --config_filename cnf/autoencoder.ini --config_name class_3_1
