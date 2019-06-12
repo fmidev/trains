@@ -117,6 +117,23 @@ class IO(Manipulator):
     #
     # GENERAL
     #
+
+    def log_class_dist(self, data, labels=None):
+        """
+        Log class distributions
+        """
+        classes = []
+        for i in labels:
+            classes.append(sum(data == i))
+
+        c_all = len(data)
+
+        logging.info('Class sizes:')
+        i = 0
+        for c in classes:
+            logging.info(' {}: {} ({:.02f})%'.format(i, c, c/c_all*100))
+            i += 1
+
     def write_csv(self, _dict, filename, ext_filename=None):
         """
         Write dict to csv
@@ -131,7 +148,11 @@ class IO(Manipulator):
             for i in np.arange(len(_dict[list(_dict.keys())[0]])):
                 values = []
                 for col in _dict.keys():
-                    values.append(str(_dict[col][i]))
+                    try:
+                        values.append(str(_dict[col][i]))
+                    except IndexError as e:
+                        # LSTM don't have first times available because of lacking history
+                        pass
                 f.write(';'.join(values)+'\n')
         logging.info('Wrote {}'.format(filename))
         self._upload_to_bucket(filename, ext_filename)
@@ -284,9 +305,22 @@ class IO(Manipulator):
 
         return super().load_scikit_model(tmp)
 
-    def save_model(self, model_filename, weights_filename, history_filename, model, history):
+    def save_keras_model(self, model_filename, history_filename, model, history):
         """
         Save keras model and weights into file
+        """
+        print("Saving model into {}".format(model_filename))
+        model.save(model_filename)
+
+        with open(history_filename, 'wb') as f:
+            pickle.dump(history, f)
+
+        self._upload_to_bucket(model_filename, model_filename)
+        self._upload_to_bucket(history_filename, history_filename)
+
+    def save_model(self, model_filename, weights_filename, history_filename, model, history):
+        """
+        Save tensorflow model and weights into file
         """
         print("Saving model into {} and weights into {}".format(model_filename, weights_filename))
         with open(model_filename, 'w') as f:
@@ -296,11 +330,9 @@ class IO(Manipulator):
         with open(history_filename, 'wb') as f:
             pickle.dump(history, f)
 
-        if self.s3:
-            self.bucket.upload_file(model_filename, model_filename)
-            self.bucket.upload_file(weights_filename, weights_filename)
-            self.bucket.upload_file(history_filename, history_filename)
-
+        self._upload_to_bucket(model_filename, model_filename)
+        self._upload_to_bucket(weights_filename, weights_filename)
+        self._upload_to_bucket(history_filename, history_filename)
 
     def load_model(self, model_filename, weights_filename, history_filename, force_local=False):
         """
@@ -660,6 +692,8 @@ class IO(Manipulator):
                 d['lat'] = ['max']
             if 'lon' in labels_df:
                 d['lon'] = ['max']
+            if 'class' in labels_df:
+                d['class'] = ['max']
 
             filt_labels_df = filt_labels_df.groupby([location_column, time_column], as_index=False).agg(d)
             #print(filt_labels_df)

@@ -36,26 +36,43 @@ def main():
     endtime = dt.datetime.strptime('2019-01-01', "%Y-%m-%d")
 
     logging.info('Reading data...')
-    data = bq.get_rows(starttime,
-                       endtime,
-                       project=options.project,
-                       dataset=options.src_dataset,
-                       table=options.src_table)
+    bq.set_params(starttime,
+                  endtime,
+                  batch_size=2500000,
+                  project=options.project,
+                  dataset=options.src_dataset,
+                  table=options.src_table)
+    data = bq.get_rows()
 
+
+    # data = bq.get_rows(starttime,
+    #                    endtime,
+    #                    project=options.project,
+    #                    dataset=options.src_dataset,
+    #                    table=options.src_table)
     logging.info('Data loaded.')
+
+    data = io.filter_train_type(labels_df=data,
+                                train_types=options.train_types,
+                                sum_types=False,
+                                train_type_column='train_type'
+                                )
+
     #print(data.shape
     data = io.calc_delay_avg(data)
     data = io.classify(data)
     log_class_dist(data.loc[:,'class'])
 
-
-    count = data.groupby('class').size().min()
-    balanced_data = pd.concat([data.loc[data['class'] == 0].sample(n=count),
-                               data.loc[data['class'] == 1].sample(n=count),
-                               data.loc[data['class'] == 2].sample(n=count),
-                               data.loc[data['class'] == 3].sample(n=count)])
-    print(balanced_data.head(5))
-    print(balanced_data.groupby('class').size())
+    print(options.no_balance)
+    balanced_data = data
+    if not options.no_balance:
+        count = data.groupby('class').size().min()
+        balanced_data = pd.concat([data.loc[data['class'] == 0].sample(n=count),
+                                   data.loc[data['class'] == 1].sample(n=count),
+                                   data.loc[data['class'] == 2].sample(n=count),
+                                   data.loc[data['class'] == 3].sample(n=count)])
+        print(balanced_data.head(5))
+        print(balanced_data.groupby('class').size())
 
     balanced_data.set_index(['time', 'trainstation'], inplace=True)
 
@@ -72,6 +89,7 @@ if __name__=='__main__':
     parser.add_argument('--src_table', type=str, default='features_wo_testset', help='Src table name for features')
     parser.add_argument('--dst_dataset', type=str, default='trains_data', help='Dst dataset name for features')
     parser.add_argument('--dst_table', type=str, default='balanced_features_wo_testset', help='Dst table name for features')
+    parser.add_argument('--no_balance', default=False, action='store_true', help='If set, no balance is done. Only classification.')
 
     parser.add_argument('--logging_level',
                         type=str,
@@ -79,12 +97,14 @@ if __name__=='__main__':
                         help='options: DEBUG,INFO,WARNING,ERROR,CRITICAL')
 
     options = parser.parse_args()
+    options.train_types = ['K', 'L']
 
     logging_level = {'DEBUG':logging.DEBUG,
                      'INFO':logging.INFO,
                      'WARNING':logging.WARNING,
                      'ERROR':logging.ERROR,
                      'CRITICAL':logging.CRITICAL}
+
     logging.basicConfig(format=("[%(levelname)s] %(asctime)s %(filename)s:%(funcName)s:%(lineno)s %(message)s"), level=logging_level[options.logging_level])
 
     main()

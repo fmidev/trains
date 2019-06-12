@@ -10,3 +10,11 @@ spark/
 labels_viz_1_0_arch/
 labels_viz_1_1/
 .git/
+gcloud/
+trains/
+.DS_Store
+.gitmodules
+historgrams.png
+nn_perf.png
+README.md
+test_data.txt

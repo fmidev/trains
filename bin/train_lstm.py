@@ -31,40 +31,6 @@ from lib import bqhandler as _bq
 from lib import config as _config
 from lib import convlstm
 
-def log_class_dist(data):
-    """
-    Log class distributions
-    """
-    c0 = sum((data < 1))
-    c1 = sum((data > 0) & (data < 2))
-    c2 = sum((data > 1) & (data < 3))
-    c3 = sum((data > 2))
-    c_all = len(data)
-    logging.info('Class sizes: 0: {} ({:.02f}%), 1: {} ({:.02f}%), 2: {} ({:.02f}%), 3: {} ({:.02f}%)'.format(c0, c0/c_all*100, c1, c1/c_all*100, c2, c2/c_all*100, c3, c3/c_all*100))
-
-
-def report_cv_results(results, filename=None, n_top=3):
-    """
-    Write cross validation results to file.
-    """
-    res = ""
-    for i in range(1, n_top + 1):
-        candidates = np.flatnonzero(results['rank_test_score'] == i)
-        for candidate in candidates:
-            res += "Model with rank: {0}\n".format(i)
-            res += "Mean validation score: {0:.3f} (std: {1:.3f})\n".format(
-                  results['mean_test_score'][candidate],
-                  results['std_test_score'][candidate])
-            res += "Parameters: {0}\n".format(results['params'][candidate])
-            res += "\n"
-
-    if filename is not None:
-        with open(filename, 'w') as f:
-            f.write(res)
-
-    logging.info(res)
-
-
 
 def main():
     """
@@ -76,33 +42,35 @@ def main():
 
     bq = _bq.BQHandler()
     io = _io.IO(gs_bucket=options.gs_bucket)
-    viz = _viz.Viz()
+    viz = _viz.Viz(io)
 
     starttime, endtime = io.get_dates(options)
     #save_path = options.save_path+'/'+options.config_name
 
-    logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
-                                                                  starttime.strftime('%Y-%m-%d'),
-                                                                  endtime.strftime('%Y-%m-%d')))
+    logging.info('Using dataset {}.{} and time range {} - {}'.format(options.feature_dataset,
+                                                                     options.feature_table,
+                                                                     starttime.strftime('%Y-%m-%d'),
+                                                                     endtime.strftime('%Y-%m-%d')))
 
 
-    all_param_names = options.label_params + options.feature_params + options.meta_params
+    all_param_names = list(set(options.label_params + options.feature_params + options.meta_params))
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
     logging.info('Building model...')
-    model = convlstm.Classifier().get_model()
+    model = convlstm.Regression(options, len(options.feature_params)).get_model()
 
     logging.info('Reading data...')
-    bq.set_params(starttime,
-                  endtime,
-                  batch_size=2500000,
+    bq.set_params(batch_size=2500000,
                   loc_col='trainstation',
                   project=options.project,
                   dataset=options.feature_dataset,
                   table=options.feature_table,
-                  parameters=all_param_names)
+                  parameters=all_param_names,
+                  locations=options.train_stations,
+                  only_winters=options.only_winters,
+                  reason_code_table=options.reason_code_table)
 
-    data = bq.get_rows()
+    data = bq.get_rows(starttime, endtime)
 
     data = io.filter_train_type(labels_df=data,
                                 train_types=options.train_types,
@@ -119,31 +87,32 @@ def main():
     if options.y_avg:
         data = io.calc_delay_avg(data)
 
-    # Classify rows
-    print(data.columns.values)
-    #if 'class' not in data.columns.values:
-    #    data = io.classify(data)
-
-    log_class_dist(data.loc[:,'class'])
-
-    #c0 = sum((data['class'] < 1))
-    #c1 = sum((data['class'] > 0) & (data['class'] < 2))
-    #c2 = sum((data['class'] > 1) & (data['class'] < 3))
-    #c3 = sum((data['class'] > 2))
-    #c_all = len(data)
-    #logging.info('Class sizes: 0: {} ({:.02f}%), 1: {} ({:.02f}%), 2: {} ({:.02f}%), 3: {} ({:.02f}%)'.format(c0, c0/c_all*100, c1, c1/c_all*100, c2, c2/c_all*100, c3, c3/c_all*100))
-
     data.sort_values(by=['time', 'trainstation'], inplace=True)
+
+    if options.month:
+        logging.info('Adding month to the dataset...')
+        data['month'] = data['time'].map(lambda x: x.month)
+        options.feature_params.append('month')
 
     if options.normalize:
         logging.info('Normalizing data...')
         xscaler = StandardScaler()
+        yscaler = StandardScaler()
+
+        labels = data.loc[:, options.label_params].astype(np.float32).values.reshape((-1, 1))
+        yscaler.fit(labels)
+        scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
 
         non_scaled_data = data.loc[:,options.meta_params+ ['class']]
         scaled_features = pd.DataFrame(xscaler.fit_transform(data.loc[:,options.feature_params]),
                                        columns=options.feature_params)
 
-        data = pd.concat([non_scaled_data, scaled_features], axis=1)
+        data = pd.concat([non_scaled_data, scaled_features, scaled_labels], axis=1)
+
+        fname = options.save_path+'/xscaler.pkl'
+        io.save_scikit_model(xscaler, fname, fname)
+        fname = options.save_path+'/yscaler.pkl'
+        io.save_scikit_model(yscaler, fname, fname)
 
     if options.pca:
         logging.info('Doing PCA analyzis for the data...')
@@ -165,7 +134,6 @@ def main():
     data_train, data_test = train_test_split(data, test_size=0.33)
 
     # Define model
-    batch_size = io.get_batch_size(data_train, options.pad_strategy, quantile=options.quantile)
     batch_size = 512
     logging.info('Batch size: {}'.format(batch_size))
 
@@ -178,25 +146,15 @@ def main():
                           write_images=True)
 
     logging.info('Data shape: {}'.format(data_train.loc[:, options.feature_params].values.shape))
-    class_weights = class_weight.compute_class_weight('balanced',
-                                                      np.unique(data_train.loc[:, 'class'].values),
-                                                      data_train.loc[:, 'class'].values)
-    weights = {}
-    i = 0
-    for w in class_weights:
-        weights[i] = w
-        i += 1
-
-    logging.info('Class weights: {}'.format(weights))
 
     data_gen = TimeseriesGenerator(data_train.loc[:, options.feature_params].values,
-                                   to_categorical(data_train.loc[:, 'class'].values),
+                                   data_train.loc[:, options.label_params].values,
                                    length=24,
                                    sampling_rate=1,
                                    batch_size=batch_size)
 
     data_test_gen = TimeseriesGenerator(data_test.loc[:, options.feature_params].values,
-                                        to_categorical(data_test.loc[:, 'class'].values),
+                                        data_test.loc[:, options.label_params].values,
                                         length=24,
                                         sampling_rate=1,
                                         batch_size=batch_size)
@@ -206,14 +164,11 @@ def main():
 
     history = model.fit_generator(data_gen,
                                   validation_data=data_test_gen,
-                                  epochs=3,
-                                  class_weight=class_weights,
+                                  epochs=options.epochs,
                                   callbacks=[boardcb]) #, batch_size=64)
 
-    model_fname = options.save_path+'/model.json'
-    weights_fname = options.save_path+'/weights.h5'
     history_fname = options.save_path+'/history.pkl'
-    io.save_model(model_fname, weights_fname, history_fname, model, history.history)
+    io.save_keras_model(options.save_file, history_fname, model, history.history)
 
     scores = model.evaluate_generator(data_test_gen)
     i = 0
@@ -226,16 +181,13 @@ def main():
     fname = '{}/training_time_validation_errors.csv'.format(options.output_path)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
 
-    pred_proba = model.predict_generator(data_test_gen)
-    pred = np.argmax(pred_proba, axis=1)
+    pred = model.predict_generator(data_test_gen)
 
-    log_class_dist(pred)
+    #io.log_class_dist(pred, 4)
     #print(history.history)
     fname = options.output_path+'/learning_over_time.png'
-    viz.plot_nn_perf(history.history, metrics={'[%]': {'acc': 'Accuracy',
-                                                       'F1': 'F1 Score',
-                                                       'Precision': 'Precision',
-                                                       'Recall': 'Recall'}},
+    viz.plot_nn_perf(history.history, metrics={'[': {'mean_squared_error': 'MSE',
+                                                     'mean_absolute_error': 'Mean Absolute Error'}},
                      filename=fname)
 
 if __name__=='__main__':

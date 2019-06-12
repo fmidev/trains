@@ -34,6 +34,44 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-xxx.json
 |  |- model              | "operationally" ran model is stored here
 ```
 
+## Data
+Because of large amount of data, full data can't be added here. Subset of data is added for small tests and development.
+
+### Delay data
+Data fields are following:
+* date
+* Start hour (for example: 7 = 7:00:00 – 7:59:59.999 transactions)
+* Start station
+* End station
+* Train type (K=intercity, L=commute, T=cargo, M=else)
+* Sum of total delayed minutes
+* Sum of total ahead of time minutes    
+* Sum of additional delayed minutes
+* Sum of additional ahead of time minutes    
+* Train count during the hour between the stations
+
+### Reason codes
+
+Fields for a_b file:
+* date
+* hour
+* train type
+* start station
+* end station
+* reason code
+* count of transactions with given reason code
+
+Fields for b_c file:
+* date
+* hour
+* train type
+* start station
+* reason code
+* end station
+* count of transactions with given reason code
+
+Consult https://www.digitraffic.fi/rautatieliikenne/ for more information. Especially links https://rata.digitraffic.fi/api/v1/metadata/detailed-cause-category-codes?show_inactive=true and https://rata.digitraffic.fi/api/v1/metadata/third-cause-category-codes?show_inactive=true are most probably useful. Detailed reason codes have chanbged in the beginning ofg 2017 but first two characters should be coherent.
+
 ## Config
 Configs are stored in `cnf/` directory config files named by used method. Config files are read by `bin/lib/config.py`. Example:
 ```
@@ -83,9 +121,16 @@ Possible config values are (most of them are not used in every method):
 | quantile | - | - | Used in LSTM |
 | p_drop | drop layer probability | - | Used in LSTM |
 | slow | if true, proceed hour by hour while training | false | Used in LSTM |
+| n_components | number of components | 4 | Used in BayesianGaussianMixture (BGM) |
 | kmeans | Calculate kmeans and use feature's distance to cluster centers  in training | false | - |
 | pca_components | If larger than 0, pre-process the data with PCA and keep corresponding components | 0 | - |
 | dbscan | - | 0 | - |
+| feature_selection | boolean | false | If set, feature selection based on coef_ or feature_importances_ is done |
+| month | boolean | false | If set, month is extracted for each timestamp and used in training as a feature param |
+| gmm_classifier | String | - | Used to determine filename of pre-trained GMM model (used in classify_scikit_gmm.py)|
+| gmm_params | String | - | Params which are used in GMM model (used in classify_scikit_gmm.py) |
+| only_winters | boolean | false | Read data only from winter months (Nov - Apr) |
+| class_limit | int | 4 | Pick only smaller classes (Used in autoencoders) |
 
 
 ## Individual Scripts
@@ -169,3 +214,5 @@ python -u bin/balance_dataset.py --logging_level INFO --src_dataset trains_data 
 ```
 
 Note, at least 64Gi memory is required to run this for the whole dataset.
+
+You may add --no_balance flag to just classify dataset without balancing.

@@ -1,0 +1,28 @@
+FROM tervo/ml:cpu
+
+ADD bin /a/bin
+ADD cnf /a/cnf
+RUN chmod -R 777 /a
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+
+#CMD python -u bin/classify_scikit.py --logging_level INFO --config_filename cnf/bgm.ini --config_name test_large
+#CMD python -u bin/classify_scikit.py --logging_level INFO --config_filename cnf/bgm.ini --config_name random_search
+#CMD python -u bin/classify_scikit_gmm.py --logging_level INFO --config_filename cnf/bgm.ini --config_name gmm_bgm_1
+#CMD python -u bin/classify_scikit_gmm.py --logging_level INFO --config_filename cnf/bgm.ini --config_name gmm_bgm_balanced
+#CMD python -u bin/classify_scikit_gmm.py --logging_level INFO --config_filename cnf/bgm.ini --config_name gmm_bgm_2
+#CMD python -u bin/classify_scikit_gmm.py --logging_level INFO --config_filename cnf/bgm.ini --config_name gmm_bgm_winters_1
+
+#CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name gaussiannb_balanced_winters
+
+#CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name rfc_winters
+#CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name rfc_balanced_winters
+#CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name rfc_limit_2
+
+
+#CMD python -u bin/classify_scikit.py --logging_level INFO --config_filename cnf/rfc.ini --config_name rfc_all
+
+#CMD python -u bin/classify_scikit.py --logging_level INFO --config_filename cnf/rfc.ini --config_name rfc_winters
+# CMD python -u bin/classify_scikit.py --logging_level INFO --config_filename cnf/rfc.ini --config_name rfc_balanced
+
+CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name svc_balanced_40

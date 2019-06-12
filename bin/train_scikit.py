@@ -5,8 +5,10 @@ import datetime as dt
 from datetime import timedelta
 import json
 import itertools
-import numpy as np
 from configparser import ConfigParser
+
+import numpy as np
+import pandas as pd
 
 from sklearn.decomposition import IncrementalPCA
 from sklearn.preprocessing import StandardScaler
@@ -23,9 +25,12 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels \
     import RBF, WhiteKernel, RationalQuadratic, ExpSineSquared
 
+from sklearn.feature_selection import SelectFromModel
+
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
+
 
 from lib import io as _io
 from lib import viz as _viz
@@ -85,7 +90,9 @@ def main():
                              penalty=options.penalty,
                              learning_rate=options.learning_rate,
                              eta0=options.eta0,
-                             alpha=options.alpha)
+                             alpha=options.alpha,
+                             tol=0.0001
+                             )
     elif options.model == 'svr':
         model = SVR()
     elif options.model == 'ard':
@@ -114,6 +121,7 @@ def main():
                               copy = False)
 
     rmses, maes, r2s, start_times, end_times, end_times_obj = [], [], [], [], [], []
+    X_complete = [] # Used for feature selection
 
     start = starttime
     end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
@@ -131,7 +139,8 @@ def main():
                                project=options.project,
                                dataset=options.feature_dataset,
                                table=options.feature_table,
-                               parameters=all_param_names)
+                               parameters=all_param_names,
+                               only_winters=options.only_winters)
             data = io.filter_train_type(labels_df=data,
                                         train_types=options.train_types,
                                         sum_types=True,
@@ -156,8 +165,8 @@ def main():
                 logging.info('Sampling {} values from data...'.format(options.n_samples))
                 data = data.sample(options.n_samples)
 
-            l_data = data.loc[:,options.meta_params + options.label_params]
-            f_data = data.loc[:,options.meta_params + options.feature_params]
+            l_data = data.loc[:, options.label_params]
+            f_data = data.loc[:, options.feature_params]
 
         except ValueError as e:
             f_data, l_data = [], []
@@ -167,14 +176,11 @@ def main():
             end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
             continue
 
-        f_data.rename(columns={'trainstation':'loc_name'}, inplace=True)
-
         logging.debug('Labels shape: {}'.format(l_data.shape))
         logging.info('Processing {} rows...'.format(len(f_data)))
-        assert l_data.shape[0] == f_data.shape[0]
 
-        target = l_data[options.label_column].astype(np.float32).values
-        features = f_data.drop(columns=['loc_name', 'time']).astype(np.float32).values
+        target = l_data.astype(np.float32).values
+        features = f_data.astype(np.float32).values
 
         X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
 
@@ -242,8 +248,21 @@ def main():
             logging.info('Training...')
             if options.model in ['rf', 'svr', 'ard', 'gp']:
                 model.fit(X_train, y_train)
+                if options.feature_selection:
+                    X_complete = X_train
+                    y_complete = y_train
+                    meta_complete = data.loc[:,options.meta_params]
             else:
                 model.partial_fit(X_train, y_train)
+                if options.feature_selection:
+                    try:
+                        X_complete = np.append(X_complete, X_train)
+                        y_complete = np.append(Y_complete, y_train)
+                        meta_complete = meta_complete.append(data.loc[:, options.meta_params])
+                    except (ValueError, NameError):
+                        X_complete = X_train
+                        y_complete = y_train
+                        meta_complete = data.loc[:, options.meta_params]
 
         # Metrics
         y_pred = model.predict(X_test)
@@ -289,6 +308,21 @@ def main():
                   'r2': r2s}
     fname = '{}/training_time_validation_errors.csv'.format(options.output_path)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
+
+    # Try doing feature selection
+    if options.feature_selection:
+        logging.info('Doing feature selection...')
+        selector = SelectFromModel(model, prefit=True)
+        print(pd.DataFrame(data=X_complete))
+        X_selected = selector.transform(X_complete)
+
+        selected_columns = f_data.columns.values[selector.get_support()]
+        logging.info('Selected following parameters: {}'.format(selected_columns))
+        data_sel = meta_complete.join(pd.DataFrame(data=y_complete, columns=options.label_params)).join(pd.DataFrame(data=X_selected, columns=selected_columns))
+
+        print(pd.DataFrame(data=X_selected, columns=selected_columns))
+        print(data_sel)
+
 
 if __name__=='__main__':
 

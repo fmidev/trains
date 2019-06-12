@@ -108,20 +108,22 @@ def main():
             print('Sampling {} values from data...'.format(options.n_samples))
             data = data.sample(options.n_samples)
 
-        l_data = data.loc[:,options.meta_params + options.label_params]
-        f_data = data.loc[:,options.meta_params + options.feature_params]
+        #l_data = data.loc[:,options.meta_params + options.label_params]
+        #f_data = data.loc[:,options.meta_params + options.feature_params]
 
     except ValueError as e:
         f_data, l_data = [], []
 
-    f_data.rename(columns={'trainstation':'loc_name'}, inplace=True)
+    #f_data.rename(columns={'trainstation':'loc_name'}, inplace=True)
 
-    logging.debug('Labels shape: {}'.format(l_data.shape))
-    print('Processing {} rows...'.format(len(f_data)))
-    assert l_data.shape[0] == f_data.shape[0]
+    #logging.debug('Labels shape: {}'.format(l_data.shape))
+    print('Processing {} rows...'.format(len(data)))
+    #assert l_data.shape[0] == f_data.shape[0]
 
-    target = l_data['delay'].astype(np.float32).values
-    features = f_data.drop(columns=['loc_name', 'time']).astype(np.float32).values
+    target = data.loc[:, options.label_params].astype(np.float32).values
+    #print(f_data.columns)
+    #features = f_data.drop(columns=['loc_name', 'time']).astype(np.float32).values
+    features = data.loc[:, options.feature_params].astype(np.float32).values
 
     X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
 
@@ -131,6 +133,7 @@ def main():
 
     if options.normalize:
         print('Normalizing data...')
+        print(X_train)
         scaler = StandardScaler()
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.fit_transform(X_test)
@@ -146,14 +149,17 @@ def main():
     logging.debug('Features shape after pre-processing: {}'.format(X_train.shape))
 
     print('Training...')
-    k1 = gpflow.kernels.Matern52(19, lengthscales=0.3)
-    k_seasonal = gpflow.kernels.Periodic(input_dim=19, period=2190, name='k_seasonal')
-    k_weather = gpflow.kernels.RBF(input_dim=19, ARD=True)
-    k_noise = gpflow.kernels.White(input_dim=19)
+    print(X_train.shape)
+    input_dim = X_train.shape[1]
+    #k1 = gpflow.kernels.Matern52(input_dim, lengthscales=0.3)
+    #k_seasonal = gpflow.kernels.Periodic(input_dim=input_dim, period=2190, name='k_seasonal')
+    #k_small = gpflow.kernels.Periodic(input_dim=input_dim, period=120, name='k_small')
+    k_weather = gpflow.kernels.RBF(input_dim=input_dim, ARD=True)
+    #k_noise = gpflow.kernels.White(input_dim=input_dim)
 
-    k = k_seasonal + k_weather + k_noise
-
-    Z_list = options.z_list.split(',')
+    #k = k_seasonal + k_weather + k_noise
+    k = k_weather
+    Z = np.random.rand(150, input_dim)
 
     if options.cv:
         logging.info('Doing random search for hyper parameters...')
@@ -162,8 +168,7 @@ def main():
                       "whiten": [True, False]
                       }
 
-        Z = np.random.rand(int(size), 19)
-        model = GP(dim=19,
+        model = GP(dim=input_dim,
                    Z=Z)
 
         random_search = RandomizedSearchCV(model,
@@ -175,7 +180,7 @@ def main():
         logging.info("RandomizedSearchCV done.")
         sys.exit()
     else:
-        model = GP(dim=19,
+        model = GP(dim=input_dim,
                    Z=Z
                    )
         model.fit(X_train.astype(np.float64),
@@ -185,6 +190,8 @@ def main():
 
         print('Training finished')
         print(model.model)
+
+#    Z_list = options.z_list.split(',')
 
     #for size in Z_list:
 

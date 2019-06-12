@@ -22,6 +22,9 @@ import matplotlib.dates as mdates
 from matplotlib.dates import MO, TU, WE, TH, FR, SA, SU
 from math import ceil
 
+from pandas.plotting import register_matplotlib_converters
+register_matplotlib_converters()
+
 class Viz:
 
     s3 = False
@@ -29,15 +32,12 @@ class Viz:
     bucket = ''
     client = ''
 
-    def __init__(self, s3_bucket=False):
-
-        if s3_bucket != False:
-            self.bucket_name = s3_bucket
-            self.s3 = True
-            self.client = boto3.client('s3')
-            resource = boto3.resource('s3')
-            self.bucket = resource.Bucket(self.bucket_name)
-
+    def __init__(self, io=None):
+        """Initialize"""
+        self.bucket = False
+        if io is not None:
+            self.io = io
+            self.bucket = True
 
     def prec_rec_f1(self, y, y_pred, n_classes=4, filename='prec_rec_f1_bars.png'):
         """
@@ -140,7 +140,7 @@ class Viz:
         # plt.legend()
         self._save(plt, filename)
 
-    def hist(self, y, label='', filename='label_hist.png'):
+    def hist(self, y, label='', title='', filename='label_hist.png'):
         logging.debug("Plotting histogram")
 
         fig, ax = plt.subplots(figsize=(8,5))
@@ -148,6 +148,7 @@ class Viz:
         # ax.grid(False)
         plt.xlabel(label)
         plt.ylabel('Amount')
+        plt.title(title)
         plt.legend()
         self._save(plt, filename)
 
@@ -372,6 +373,7 @@ class Viz:
                      color="white" if cm[i, j] > thresh else "black")
 
         plt.tight_layout()
+        fig.subplots_adjust(bottom=0.12)
         plt.ylabel('True label')
         plt.xlabel('Predicted label')
         self._save(plt, filename)
@@ -528,17 +530,10 @@ class Viz:
         self._save(plt, filename)
 
     def plot_model(self, model, filename):
+        plot_model(model, to_file=filename, show_shapes=True)
         logging.debug("Plotted model structure to "+filename)
-        try:
-            if self.s3:
-                xfn = basename(filename)
-                xffn = '/tmp/'+xfn
-                plot_model(model, to_file=xffn, show_shapes=True)
-                self.bucket.upload_file(xffn, filename)
-            else:
-                plot_model(model, to_file=filename, show_shapes=True)
-        except:
-            logging.debug("...FAILED")
+        if self.bucket:
+            self.io._upload_to_bucket(filename, filename)
 
 
     def plot_feature_map(self, model, layer_id, activation_id, X, filename, n=256, ax=None, **kwargs):
@@ -616,19 +611,46 @@ class Viz:
 
 
     def _save(self, p, filename):
-        if self.s3:
-            xfn = basename(filename)
-            xffn = '/tmp/'+xfn
-            p.savefig(xffn)
-            self.bucket.upload_file(xffn, filename)
-        else:
-            logging.info('Saved file {}'.format(filename))
-            p.savefig(filename)
-
+        p.savefig(filename)
+        logging.info('Saved file {}'.format(filename))
+        if self.bucket:
+            self.io._upload_to_bucket(filename, filename)
         plt.close()
 
 
     # TRAINS ####################################################
+
+    def reconstruction_error(self, errors, desired_class=None, filename='reconstruction_error.png'):
+        """
+        Create reconstruction_error plot
+        """
+        fig = plt.figure(figsize=(18,18))
+        threshold_fixed = 5
+
+        axes = {}
+        i = 1
+        for plot_name, error_df in errors.items():
+            axes[i] = fig.add_subplot(3, 1, i)
+            if desired_class is not None:
+                error_df = error_df[(error_df.loc[:,'True_class'] == desired_class)]
+
+            groups = error_df.groupby('True_class')
+
+            for name, group in groups:
+                axes[i].plot(group.index, group.Reconstruction_error, marker='o', ms=3.5, linestyle='',label=name)
+
+            axes[i].hlines(threshold_fixed, axes[i].get_xlim()[0], axes[i].get_xlim()[1], colors="r", zorder=100, label='Threshold')
+            axes[i].set_title(plot_name)
+            axes[i].set_yscale('log')
+            axes[i].grid(True)
+            axes[i].legend()
+            i += 1
+
+        plt.yscale('log')
+        plt.suptitle("Reconstruction error for different classes")
+        plt.ylabel("Reconstruction error")
+        plt.xlabel("Data point index")
+        self._save(plt, filename)
 
     def hist_all_delays(self, df, filename):
         """
@@ -743,6 +765,7 @@ class Viz:
 
         i = 0
         for t in times:
+
             dt = t - prev
             try:
                 diff = dt.total_seconds()
@@ -755,15 +778,20 @@ class Viz:
                     temp_data[j+1] = []
                 temp_data[0] = []
 
-            temp_data[0].append(t)
-            for j in np.arange(0,len(data)):
-                if data[j] is not None:
-                    temp_data[j+1].append(data[j][i])
-                else:
-                    temp_data[j+1].append(None)
+            try:
+                temp_data[0].append(t)
+                for j in np.arange(0,len(data)):
+                    if data[j] is not None:
+                        temp_data[j+1].append(data[j][i])
+                    else:
+                        temp_data[j+1].append(None)
+            except IndexError as e:
+                # LSTM do not have all time steps because of lacking history
+                temp_data[0].pop()
 
             prev = t
             i += 1
+
         splits.append(copy.deepcopy(temp_data))
         return splits
 
@@ -791,6 +819,7 @@ class Viz:
                 ax = axes
 
             times, delay, pred_delay, low, high = splits[i]
+
             max_ = 0
             if low[0] is not None and high[0] is not None:
                 ax.fill_between(times,

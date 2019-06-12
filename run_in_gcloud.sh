@@ -28,8 +28,8 @@ case $i in
     NAME="${i#*=}"
     shift # past argument=value
     ;;
-    -p=*|--preemptive=*)
-    NAME="${i#*=}"
+    -p=*|--preemptible=*)
+    PRE="${i#*=}"
     shift # past argument=value
     ;;
     *)
