@@ -226,6 +226,16 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/classify_transactions_scikit.py --config_filename cnf/binary.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+  dual:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/ml:cpu
+    command: python -u bin/train_dual.py --config_filename cnf/dual.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
 #############
   repr:
