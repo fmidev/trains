@@ -295,6 +295,7 @@ class IO(Manipulator):
         if self.s3 and not force_local:
             raise ValueError('S3 not implemented')
         if self.gs and not force_local:
+            logging.info('Loading file from gs://{}/{}'.format(self.bucket_name, filename))
             client = storage.Client()
             bucket = client.get_bucket(self.bucket_name)
             tmp = tempfile.NamedTemporaryFile()
