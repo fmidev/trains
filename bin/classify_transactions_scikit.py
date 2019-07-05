@@ -29,6 +29,70 @@ from lib.bqhandler import BQHandler
 from lib import imputer
 from lib import config as _config
 
+class EmptyDataError(Exception):
+   """Empty data exception"""
+   pass
+
+def perf_metrics(y_pred_proba, y_pred, y_test, start, end, viz, io):
+    """ Calculate, print, save and plot performance metrics """
+
+    acc = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average='binary')
+    recall = recall_score(y_test, y_pred, average='binary')
+    f1 = f1_score(y_test, y_pred, average='binary')
+
+    logging.info('Accuracy: {}'.format(acc))
+    logging.info('Precision: {}'.format(precision))
+    logging.info('Recall: {}'.format(recall))
+    logging.info('F1 score: {}'.format(f1))
+    io.log_class_dist(y_pred, labels=[-1,1])
+
+    error_data = {'acc': [acc],
+                  'precision': [precision],
+                  'recall': [recall],
+                  'f1': [f1]}
+    fname = '{}/test_validation_errors_{}_{}.csv'.format(options.output_path, start, end)
+    io.write_csv(error_data, filename=fname, ext_filename=fname)
+
+    # Confusion matrices
+    fname = '{}/confusion_matrix_testset_{}_{}.png'.format(options.output_path, start, end)
+    viz.plot_confusion_matrix(y_test, y_pred, np.arange(2), filename=fname)
+
+    fname = '{}/confusion_matrix_testset_{}_{}_normalised.png'.format(options.output_path, start, end)
+    viz.plot_confusion_matrix(y_test, y_pred, np.arange(2), True, filename=fname)
+
+    # Precision-recall curve
+    fname = '{}/precision-recall-curve_testset_{}_{}.png'.format(options.output_path, start, end)
+    viz.prec_rec_curve(y_test, y_pred_proba, filename=fname)
+
+    # ROC
+    fname = '{}/roc_testset_{}_{}.png'.format(options.output_path, start, end)
+    viz.plot_binary_roc(y_test, y_pred_proba, filename=fname)
+
+
+
+
+def predict_timerange(test_data, feature_params, model, xscaler, start, end):
+    """ Do prediction for given time range in data."""
+    X = test_data.loc[start:end, feature_params].astype(np.float32).values
+    y = test_data.loc[start:end, 'class'].astype(np.int32).values.ravel()
+
+    if X.shape[0] < 1:
+        raise EmptyDataError
+
+    if options.normalize:
+        X = xscaler.transform(X)
+
+    logging.info('Predicting for time range {} - {}...'.format(start, end))
+    y_pred_proba = model.predict_proba(X)
+    y_pred = np.argmax(y_pred_proba, axis=1)
+    # We want [-1,1] classes as y values are
+    y_pred[y_pred == 0] = -1
+    logging.info('...done')
+
+    return y_pred_proba, y_pred, y
+
+
 
 def main():
     """
@@ -124,14 +188,6 @@ def main():
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
-    if options.pca:
-        logging.info('Doing PCA analyzis for the data...')
-        X_train = ipca.fit_transform(X_train)
-        fname = options.output_path+'/ipca_explained_variance.png'
-        viz.explained_variance(ipca, fname)
-        io._upload_to_bucket(filename=fname, ext_filename=fname)
-        X_test = ipca.fit_transform(X_test)
-
     logging.debug('Features shape after pre-processing: {}'.format(X_train.shape))
 
     if options.cv:
@@ -205,6 +261,53 @@ def main():
     # ROC
     fname = '{}/roc.png'.format(options.output_path)
     viz.plot_binary_roc(y_test, y_pred_proba, filename=fname)
+
+
+    ############################################################################
+    # EVALUATE
+    ############################################################################
+    if options.evaluate:
+        logging.info('Loading test data...')
+        test_data = bq.get_rows(dt.datetime.strptime('2010-01-01', "%Y-%m-%d"),
+                                dt.datetime.strptime('2012-01-01', "%Y-%m-%d"),
+                                loc_col='trainstation',
+                                project=options.project,
+                                dataset=options.feature_dataset,
+                                table=options.test_table,
+                                parameters=all_param_names)
+
+        test_data = io.filter_train_type(labels_df=test_data,
+                                         train_types=['K','L'],
+                                         sum_types=True,
+                                         train_type_column='train_type',
+                                         location_column='trainstation',
+                                         time_column='time',
+                                         sum_columns=['delay'],
+                                         aggs=aggs)
+
+        # Sorting is actually not necessary. It's been useful for debugging.
+        test_data.sort_values(by=['time', 'trainstation'], inplace=True)
+        test_data.set_index('time', inplace=True)
+        logging.info('Test data contain {} rows...'.format(len(test_data)))
+
+        logging.info('Adding binary class to the test dataset with limit {}...'.format(options.delay_limit))
+        #logging.info('Adding binary class to the dataset with limit {}...'.format(limit))
+        #data['class'] = data['count'].map(lambda x: 1 if x > options.delay_count_limit else -1)
+        test_data['class'] = test_data['delay'].map(lambda x: 1 if x > options.delay_limit else -1)
+        io.log_class_dist(test_data.loc[:, 'class'].values, labels=[-1,1])
+
+        if options.month:
+            logging.info('Adding month to the test dataset...')
+            test_data['month'] = test_data.index.map(lambda x: x.month)
+
+        times = [('2011-02-01', '2011-03-01'), ('2016-06-01', '2016-07-01'), ('2017-02-01', '2017-03-01'), ('2011-02-01', '2017-03-01')]
+        for start, end in times:
+            try:
+                y_pred_proba, y_pred, y = predict_timerange(test_data, options.feature_params, model, scaler, start, end)
+                perf_metrics(y_pred_proba, y_pred, y, start, end, viz, io)
+            except EmptyDataError:
+                logging.info('No data for {} - {}'.format(start, end))
+
 
 
 if __name__=='__main__':
