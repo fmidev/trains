@@ -15,4 +15,10 @@ RUN chmod 777 /a
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name svc_2010-2019-winters_1
+#CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name svc_2010-2019-winters_1
+
+#CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name svc_2010-2014-winters_1
+
+#CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name svc_2010-2012-all_1
+
+CMD python -u bin/classify_transactions_scikit.py --logging_level INFO --config_filename cnf/binary.ini --config_name svc_2012-2014-all_1

@@ -131,6 +131,7 @@ Possible config values are (most of them are not used in every method):
 | gmm_params | String | - | Params which are used in GMM model (used in classify_scikit_gmm.py) |
 | only_winters | boolean | false | Read data only from winter months (Nov - Apr) |
 | class_limit | int | 4 | Pick only smaller classes (Used in autoencoders) |
+| evaluate | bool | False | If true, run evaluation with test data |
 
 
 ## Individual Scripts

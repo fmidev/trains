@@ -343,7 +343,7 @@ class Viz:
         """
         Precision - Recall Curve
         """
-        plt.clf()
+
         plt.figure(figsize=(24, 24))
 
         plt.rc('font', size=fontsize)
@@ -384,13 +384,16 @@ class Viz:
     def plot_confusion_matrix(self, y_true, y_pred, classes,
                               normalize=False,
                               cmap=plt.cm.Blues,
-                              filename='confusion_matrix.png'):
+                              filename=None,
+                              fontsize=40):
         """
         This function logging.debugs and plots the confusion matrix.
         Normalization can be applied by setting `normalize=True`.
         """
+        plt.clf()
+        plt.rc('font', size=fontsize)
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(12,12))
         np.set_printoptions(precision=2)
         cm = confusion_matrix(y_true, y_pred)
         if normalize:
@@ -425,13 +428,14 @@ class Viz:
         """
         Plot binary ROC
         """
+        logging.info('Plotting ROC...')
         plt.rc('font', size=fontsize)
         fig, ax1 = plt.subplots(figsize=(24,24))
         plt.clf()
 
         fpr, tpr, threshhold = roc_curve(y, y_pred[:,1])
         roc_auc = auc(fpr, tpr)
-        print('AUC is {}'.format(roc_auc))
+        logging.info('AUC: {}'.format(roc_auc))
         plt.plot([0, 1], [0, 1], 'k--')
         plt.plot(fpr, tpr, label="ROC (AUC: {:0.2f})".format(roc_auc))
 
