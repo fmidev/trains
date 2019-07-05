@@ -108,7 +108,7 @@ def read(options):
         _bval('only_winters')
         _intval('epochs', 3)
         _bval('balance')
-
+        _bval('evaluate')
         _bval('y_avg')
 
         try:
