@@ -164,6 +164,7 @@ def read(options):
 
         # binary
         _intval('delay_count_limit')
+        _intval('delay_limit')
 
         # other
         _intval('pca_components')
