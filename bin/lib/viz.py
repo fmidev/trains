@@ -13,7 +13,7 @@ from keras.utils import plot_model
 from keras import activations
 from sklearn.metrics import confusion_matrix
 from sklearn.preprocessing import label_binarize
-from sklearn.metrics import roc_curve, auc, precision_score, f1_score, recall_score
+from sklearn.metrics import roc_curve, auc, precision_score, f1_score, recall_score, average_precision_score, precision_recall_curve
 from scipy import interp
 import boto3, tempfile
 from os.path import basename
@@ -339,6 +339,48 @@ class Viz:
         self._save(plt, filename)
 
 
+    def prec_rec_curve(self, y, y_pred, filename=None, fontsize=40):
+        """
+        Precision - Recall Curve
+        """
+        plt.clf()
+        plt.figure(figsize=(24, 24))
+
+        plt.rc('font', size=fontsize)
+
+        y = label_binarize(y, classes=[-1,1])
+
+        precision, recall, _ = precision_recall_curve(y, y_pred[:, 1])
+        average_precision = average_precision_score(y, y_pred[:, 1])
+
+        f_scores = np.linspace(0.2, 0.8, num=4)
+        lines = []
+        labels = []
+        for f_score in f_scores:
+            x = np.linspace(0.01, 1)
+            y_ = f_score * x / (2 * x - f_score)
+            l, = plt.plot(x[y_ >= 0], y_[y_ >= 0], color='gray', alpha=0.5)
+            plt.annotate('F1={0:0.1f}'.format(f_score), xy=(0.9, y_[45] + 0.02)) #, fontsize=10)
+
+        lines.append(l)
+        labels.append('F1 curves')
+
+        l, = plt.plot(recall, precision, color='gold', lw=2)
+        lines.append(l)
+        labels.append('Micro-average (area = {0:0.2f})'
+        ''.format(average_precision))
+
+        fig = plt.gcf()
+        fig.subplots_adjust(bottom=0.25)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xticks(np.arange(.2, 1., .2))
+        plt.xlabel('Recall', labelpad=20)
+        plt.ylabel('Precision', labelpad=20)
+        plt.title('Precision-Recall Curve', pad=20)
+        plt.legend(lines, labels, ncol=2)
+        self._save(plt, filename)
+
     def plot_confusion_matrix(self, y_true, y_pred, classes,
                               normalize=False,
                               cmap=plt.cm.Blues,
@@ -379,9 +421,29 @@ class Viz:
         self._save(plt, filename)
 
 
+    def plot_binary_roc(self, y, y_pred, filename=None, fontsize=40):
+        """
+        Plot binary ROC
+        """
+        plt.rc('font', size=fontsize)
+        fig, ax1 = plt.subplots(figsize=(24,24))
+        plt.clf()
+
+        fpr, tpr, threshhold = roc_curve(y, y_pred[:,1])
+        roc_auc = auc(fpr, tpr)
+        print('AUC is {}'.format(roc_auc))
+        plt.plot([0, 1], [0, 1], 'k--')
+        plt.plot(fpr, tpr, label="ROC (AUC: {:0.2f})".format(roc_auc))
+
+        plt.xlabel('False positive rate')
+        plt.ylabel('True positive rate')
+        plt.title('ROC curve')
+        plt.legend(loc="lower right")
+        self._save(plt, filename)
+
     def plot_roc(self, y, y_pred, n_classes=4, filename='roc.png'):
         """
-        Plot ROC
+        Plot multiclass ROC
         """
         fig, ax1 = plt.subplots(figsize=(12,12))
         plt.clf()
@@ -610,11 +672,13 @@ class Viz:
         self._save(fig, filename)
 
 
-    def _save(self, p, filename):
-        p.savefig(filename)
-        logging.info('Saved file {}'.format(filename))
-        if self.bucket:
-            self.io._upload_to_bucket(filename, filename)
+    def _save(self, p, filename=None):
+        """ Save file """
+        if filename is not None:
+            p.savefig(filename)
+            logging.info('Saved file {}'.format(filename))
+            if self.bucket:
+                self.io._upload_to_bucket(filename, filename)
         plt.close()
 
 
