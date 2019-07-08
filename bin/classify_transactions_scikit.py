@@ -245,6 +245,11 @@ def main():
         io.report_cv_results(random_search.cv_results_, scores=scores, filename=fname, ext_filename=fname)
         model = random_search.best_estimator_
 
+        io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
+        if options.normalize:
+            fname=options.save_path+'/xscaler.pkl'
+            io.save_scikit_model(scaler, filename=fname, ext_filename=fname)
+
     else:
         logging.info('Training...')
         model.fit(X_train, y_train)
