@@ -22,6 +22,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import fbeta_score, make_scorer
 
 from lib.io import IO
 from lib.viz import Viz
@@ -199,20 +200,51 @@ def main():
                           }
         elif options.model == 'rfc':
             raise("Not implemented. Get back to work!")
+        elif options.model == 'svc':
+
+            features_compinations = [['lat','lon','pressure','max_temperature','min_temperature','mean_temperature','mean_dewpoint','mean_humidity','mean_winddirection','mean_windspeedms','max_windgust','max_precipitation1h','max_snowdepth','max_n','min_vis','min_clhb','max_precipitation3h'],
+            ['pressure','max_temperature','min_temperature','mean_temperature','mean_dewpoint','mean_humidity','mean_winddirection','mean_windspeedms','max_windgust','max_precipitation1h','max_snowdepth','max_n','min_vis','min_clhb','max_precipitation3h'],
+            ['pressure','min_temperature','mean_dewpoint','mean_winddirection','mean_windspeedms','max_windgust','max_precipitation1h','max_snowdepth','max_n','min_vis','min_clhb','max_precipitation3h'],
+            ['pressure','min_temperature','mean_dewpoint','mean_winddirection','mean_windspeedms','max_snowdepth','max_n','min_vis','min_clhb','max_precipitation3h'],
+            ['pressure','min_temperature','mean_dewpoint','mean_winddirection','mean_windspeedms','max_snowdepth','max_n','min_vis','min_clhb','max_precipitation1h'],
+            ['pressure','min_temperature','mean_dewpoint','mean_winddirection','mean_windspeedms','max_snowdepth','min_vis','max_precipitation1h'],
+            ['pressure','min_temperature','mean_winddirection','mean_windspeedms','max_snowdepth','max_precipitation1h']]
+
+            param_grid = {"C": [0.0001, 0.001, 0.01, 0.1, 1],
+                          "kernel": ['rbf', 'poly'],
+                          "degree": [2, 3],
+                          "gamma": [0.5],
+                          "coef0": [0.1],
+                          "probability": [True],
+                          "features": features_compinations}
+
+            from lib.svc import SVCF
+            model = SVCF(all_features=options.feature_params)
         else:
             raise("No param_grid set for given model ({})".format(options.model))
+
+
+        print(model.get_params().keys())
+
+        ftwo_scorer = make_scorer(fbeta_score, beta=2)
+        scoring = {'accuracy': 'accuracy', 'precision': 'precision', 'recall': 'recall', 'f1': 'f1', 'f2': ftwo_scorer}
 
         random_search = RandomizedSearchCV(model,
                                            param_distributions=param_grid,
                                            n_iter=int(options.n_iter_search),
+                                           verbose=1,
+                                           scoring = scoring,
+                                           refit='recall',
                                            n_jobs=-1)
 
         random_search.fit(X_train, y_train)
+
         logging.info("RandomizedSearchCV done.")
+        scores=  ['accuracy', 'precision', 'recall', 'f1', 'f2']
         fname = options.output_path+'/random_search_cv_results.txt'
-        io.report_cv_results(random_search.cv_results_, fname)
-        io._upload_to_bucket(filename=fname, ext_filename=fname)
-        sys.exit()
+        io.report_cv_results(random_search.cv_results_, scores=scores, filename=fname, ext_filename=fname)
+        model = random_search.best_estimator_
+
     else:
         logging.info('Training...')
         model.fit(X_train, y_train)
@@ -269,7 +301,7 @@ def main():
     if options.evaluate:
         logging.info('Loading test data...')
         test_data = bq.get_rows(dt.datetime.strptime('2010-01-01', "%Y-%m-%d"),
-                                dt.datetime.strptime('2012-01-01', "%Y-%m-%d"),
+                                dt.datetime.strptime('2019-01-01', "%Y-%m-%d"),
                                 loc_col='trainstation',
                                 project=options.project,
                                 dataset=options.feature_dataset,
