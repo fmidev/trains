@@ -183,6 +183,49 @@ class BQHandler(object):
         job.result()
         assert job.state == 'DONE'
 
+    def nparray_to_table(self, values, columns, project, dataset, table):
+        """
+        Save given numpy array to table
+
+        values  : lst
+                  list of Numpy arrays
+        columns : lst
+                  list of lists of column names
+        dataset : str
+                  dataset name
+        table   : str
+                  table name
+        """
+
+        table = table.replace('-','_')
+
+        dfs = []
+        i = 0
+        for data in values:
+            dfs.append(pd.DataFrame(data, columns=columns[i]))
+            i += 1
+        df = pd.concat(dfs, axis=1)
+
+        self.delete_table(project, dataset, table)
+
+        self.dataset_to_table(df, dataset, table)
+
+    def delete_table(self, project, dataset, table):
+        """
+        Delete big query table
+
+        dataset : str
+                  dataset name
+        table   : str
+                  table name
+        """
+        self._connect()
+        table_id = '{project}.{dataset}.{table}'.format(project=project,
+                                                        dataset=dataset,
+                                                        table=table)
+        self.client.delete_table(table_id, not_found_ok=True)
+        logging.info("Deleted table '{}'.".format(table_id))
+
     def execute(self, statement):
         """
         Execute single SQL statement in
@@ -251,8 +294,8 @@ class BQHandler(object):
             sql += ' AND EXTRACT(MONTH FROM a.time) IN (1,2,3,4,11,12)'
 
         if self.where is not None:
-            for col, value in self.where.iteritems():
-                sql +=' AND a.{}=a.{}'.format(col, value)
+            for col, value in self.where.items():
+                sql +=' AND {}={}'.format(col, value)
 
         if self.order is not None:
             sql += ' ORDER BY a.{}'.format(','.join(self.order))

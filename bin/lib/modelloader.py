@@ -74,7 +74,7 @@ class ModelLoader():
         """
         if not self.model_loaded:
             logging.info('Loading model from {}/{}'.format(save_path, save_file))
-            self.io._download_from_bucket(save_file, save_file)
+            #self.io._download_from_bucket(save_file, save_file)
             self.predictor = self.io.load_scikit_model(save_file)
             self.model_loaded = True
 

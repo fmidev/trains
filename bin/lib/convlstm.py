@@ -78,7 +78,7 @@ class Regression:
 
         self.model = Sequential()
         self.model.add(LSTM(options.time_steps, input_shape=(options.time_steps, dim)))
-        self.model.add(Dense(12, kernel_initializer=initializer))
+        #self.model.add(Dense(12, kernel_initializer=initializer))
         self.model.add(Dense(1, kernel_initializer=initializer))
         self.model.compile(loss=losses.mean_squared_error, optimizer='adam', metrics=[losses.mean_squared_error, losses.mean_absolute_error])
 

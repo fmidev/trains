@@ -1,4 +1,4 @@
-FROM tervo/ml
+FROM tervo/ml:cpu
 
 RUN apt-get install locales
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -18,4 +18,5 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
 # CMD python -u /a/bin/classify.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_class_avg_1
 # CMD python -u /a/bin/classify.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_class_balanced_1
-CMD python -u /a/bin/train_lstm.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_params_fast_winters_1
+
+CMD python -u /a/bin/train_lstm.py --logging_level INFO --config_filename cnf/lstm.ini --config_name all_24_avg_1
