@@ -25,9 +25,9 @@ from sklearn.metrics import r2_score
 import tensorflow as tf
 from tensorflow.python.client import device_lib
 
-from lib import io as _io
-from lib import viz as _viz
-from lib import bqhandler as _bq
+from lib.io import IO
+from lib.viz import Viz
+from lib.bqhandler import BQHandler
 from lib import config as _config
 from lib import convlstm
 
@@ -37,16 +37,15 @@ def main():
     Main program
     """
 
+    # Print GPU availability
     local_device_protos = device_lib.list_local_devices()
     logging.info([x.name for x in local_device_protos if x.device_type == 'GPU'])
 
-    bq = _bq.BQHandler()
-    io = _io.IO(gs_bucket=options.gs_bucket)
-    viz = _viz.Viz(io)
+    bq = BQHandler()
+    io = IO(gs_bucket=options.gs_bucket)
+    viz = Viz(io)
 
     starttime, endtime = io.get_dates(options)
-    #save_path = options.save_path+'/'+options.config_name
-
     logging.info('Using dataset {}.{} and time range {} - {}'.format(options.feature_dataset,
                                                                      options.feature_table,
                                                                      starttime.strftime('%Y-%m-%d'),
@@ -57,7 +56,9 @@ def main():
     aggs = io.get_aggs_from_param_names(options.feature_params)
 
     logging.info('Building model...')
-    model = convlstm.Regression(options, len(options.feature_params)).get_model()
+    dim = len(options.feature_params)
+    if options.month: dim += 1
+    model = convlstm.Regression(options, dim).get_model()
 
     logging.info('Reading data...')
     bq.set_params(batch_size=2500000,
@@ -140,7 +141,7 @@ def main():
     # Initialization
     losses, val_losses, accs, val_accs, steps = [], [], [], [], []
 
-    boardcb = TensorBoard(log_dir=options.log_dir,
+    boardcb = TensorBoard(log_dir=options.log_dir+'/lstm',
                           histogram_freq=0,
                           write_graph=True,
                           write_images=True)
@@ -186,9 +187,12 @@ def main():
     #io.log_class_dist(pred, 4)
     #print(history.history)
     fname = options.output_path+'/learning_over_time.png'
-    viz.plot_nn_perf(history.history, metrics={'[': {'mean_squared_error': 'MSE',
-                                                     'mean_absolute_error': 'Mean Absolute Error'}},
-                     filename=fname)
+    viz.plot_nn_perf(history.history, metrics={'Error': {'mean_squared_error': 'MSE',
+                                                         'mean_absolute_error': 'MAE'}},
+                                                         filename=fname)
+
+
+
 
 if __name__=='__main__':
 
@@ -196,7 +200,6 @@ if __name__=='__main__':
 
     parser.add_argument('--config_filename', type=str, default=None, help='Configuration file name')
     parser.add_argument('--config_name', type=str, default=None, help='Configuration file name')
-    parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
 
     parser.add_argument('--logging_level',
                         type=str,
@@ -204,7 +207,6 @@ if __name__=='__main__':
                         help='options: DEBUG,INFO,WARNING,ERROR,CRITICAL')
 
     options = parser.parse_args()
-
     _config.read(options)
 
     logging_level = {'DEBUG':logging.DEBUG,
@@ -213,5 +215,8 @@ if __name__=='__main__':
                      'ERROR':logging.ERROR,
                      'CRITICAL':logging.CRITICAL}
     logging.basicConfig(format=("[%(levelname)s] %(asctime)s %(filename)s:%(funcName)s:%(lineno)s %(message)s"), level=logging_level[options.logging_level])
+
+    logging.info('Using configuration {}|{}'.format(options.config_filename,
+                                                    options.config_name))
 
     main()
