@@ -542,7 +542,15 @@ class Viz:
                      metrics={'MAE': {'mean_absolute_error': 'Mean absolute error'}},
                      filename='nn_perf.png'):
 
-        fig, ax1 = plt.subplots(figsize=(12,8))
+        fs = 40
+        tick_pad = 15
+        plt.rc('font', size=fs)
+        params = {'legend.fontsize': fs,
+                  'xtick.major.pad': tick_pad,
+                  'ytick.major.pad': tick_pad}
+        plt.rcParams.update(params)
+
+        fig, ax1 = plt.subplots(figsize=(24,16))
 
         # Get training and test accuracy histories
 
@@ -557,7 +565,7 @@ class Viz:
         colors = ['r', 'g', 'b', 'y', 'm']
         lns = []
         axes = {'Loss': ax1}
-        axes['Loss'].set_ylabel('Loss')
+        axes['Loss'].set_ylabel('Loss', fontsize=fs)
         epoch_count = range(1, len(history['loss']) + 1)
         lns += axes['Loss'].plot(epoch_count, history['loss'], color='b', linestyle=dashes[0], label='Training loss')
         lns += axes['Loss'].plot(epoch_count, history['val_loss'], color='g', linestyle=dashes[0], label='Validation loss')
@@ -586,12 +594,14 @@ class Viz:
         if count > 4:
             ncol = ceil(count/2)
 
+
         labs = [l.get_label() for l in lns]
-        ax1.legend(lns, labs, loc='upper center',# bbox_to_anchor=(0.5, 1.05),
+        ax1.legend(lns, labs, loc='upper center', bbox_to_anchor=(0.5, 1.2),
                    ncol=ncol, frameon=False, shadow=True)
 
         # ax1.legend(lns, labs, loc=0, frameon=False)
         plt.xlabel('Epoch')
+        plt.subplots_adjust(top=0.8, right=0.9, left=0.1)
 
         self._save(plt, filename)
 
@@ -679,7 +689,7 @@ class Viz:
     def _save(self, p, filename=None):
         """ Save file """
         if filename is not None:
-            p.savefig(filename)
+            p.savefig(filename, dpi=600)
             logging.info('Saved file {}'.format(filename))
             if self.bucket:
                 self.io._upload_to_bucket(filename, filename)
@@ -949,6 +959,8 @@ class Viz:
     def plot_learning_over_time(self, times, rmse=None, mae=None,
                                 r2=None, heading='Model error development over time',
                                 filename='error.png'):
+
+        plt.rc('font', size=40)
 
         fig, ax1 = plt.subplots(figsize=(16,10))
 

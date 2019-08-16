@@ -17,23 +17,23 @@ from tensorflow.contrib import predictor
 from sklearn import metrics
 from sklearn.preprocessing import StandardScaler
 
-from lib import io as _io
-from lib import viz as _viz
-from lib import bqhandler as _bq
+from lib.io import IO
+from lib.viz import Viz
+from lib.bqhandler import BQHandler
+from lib.modelloader import ModelLoader
+
 from lib import config as _config
-from lib import modelloader as _ml
-from lib import predictor as _predictor
+from lib.predictor import Predictor
 
 def main():
     """
     Get data from db and save it as csv
     """
 
-    bq = _bq.BQHandler()
-    io = _io.IO(gs_bucket=options.gs_bucket)
-    viz = _viz.Viz()
-    model_loader = _ml.ModelLoader(io)
-    predictor = _predictor.Predictor(io, model_loader, options)
+    bq = BQHandler()
+    io = IO(gs_bucket=options.gs_bucket)
+    viz = Viz(io=io)
+    predictor = Predictor(io, ModelLoader(io), options)
 
     # Mean delay over the whole dataset (both train and validation),
     # used to calculate Brier Skill
@@ -77,8 +77,8 @@ def main():
                            endtime,
                            loc_col='trainstation',
                            project=options.project,
-                           dataset='trains_testset',
-                           table='features_1',
+                           dataset='trains_data',
+                           table='features_testset',
                            parameters=all_param_names,
                            locations=[station])
 
@@ -100,27 +100,14 @@ def main():
         if options.y_avg:
             data = io.calc_delay_avg(data)
 
+        if options.month:
+            logging.info('Adding month to the dataset...')
+            data['month'] = data['time'].map(lambda x: x.month)
+            if 'month' not in options.feature_params:
+                options.feature_params.append('month')
+
         data.sort_values(by=['time', 'trainstation'], inplace=True)
         logging.info('Processing {} rows...'.format(len(data)))
-
-        # if options.normalize:
-        #     logging.info('Normalizing data...')
-        #     # TODO download scalers from bucket
-        #
-        #     fname = options.save_path+'/xscaler.pkl'
-        #     xscaler = io.load_scikit_model(fname)
-        #
-        #     fname = options.save_path+'/yscaler.pkl'
-        #     yscaler = io.load_scikit_model(fname)
-        #
-        #     non_scaled_data = data.loc[:,options.meta_params + options.label_params]
-        #     #labels = data.loc[:, options.label_params].values.reshape((-1, 1))
-        #
-        #     #scaled_labels = pd.DataFrame(yscaler.transform(labels), columns=['delay'])
-        #     scaled_features = pd.DataFrame(xscaler.transform(data.loc[:,options.feature_params]),
-        #                                    columns=options.feature_params)
-        #
-        #     data = pd.concat([non_scaled_data, scaled_features], axis=1)
 
         # Pick times for creating error time series
         times = data.loc[:,'time']

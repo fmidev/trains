@@ -120,7 +120,7 @@ def main():
     elif options.model == 'rfc':
         model = RandomForestClassifier(n_jobs=-1)
     elif options.model == 'svc':
-        params = {'shrinking': True, 'kernel': 'rbf', 'gamma': 0.5, 'C': 1, 'probability': True}
+        params = {'kernel': 'rbf', 'gamma': 0.5, 'C': 1, 'probability': True}
         model = SVC(**params)
     else:
         raise('Model not specificied or wrong. Add for example "model: bgm" to config file.')
@@ -181,7 +181,7 @@ def main():
     target = data.loc[:,'class'].astype(np.int32).values.ravel()
     features = data.loc[:,options.feature_params].astype(np.float32).values
 
-    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.10)
+    X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.3)
 
     if options.normalize:
         logging.info('Normalizing data...')
@@ -298,6 +298,10 @@ def main():
     # ROC
     fname = '{}/roc.png'.format(options.output_path)
     viz.plot_binary_roc(y_test, y_pred_proba, filename=fname)
+
+
+
+
 
 
     ############################################################################

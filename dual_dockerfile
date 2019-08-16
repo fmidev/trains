@@ -15,4 +15,9 @@ RUN chmod 777 /a
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name test-2y
+# CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name test-2y
+# CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name 2010-2019_winters_with_testset_1
+# CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name 2010-2019_winters_2
+# CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name 2010-2019_winters_3
+
+CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name 2010-2019_feb_1

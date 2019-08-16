@@ -97,18 +97,6 @@ else
       "containers": [
       {
         "env": [
-        {
-          "name": "NVIDIA_VISIBLE_DEVICES",
-          "value": "all"
-        },
-        {
-          "name": "NVIDIA_DRIVER_CAPABILITIES",
-          "value": "compute,utility"
-        },
-        {
-          "name": "NVIDIA_REQUIRE_CUDA",
-          "value": "cuda>=8.0"
-        }
         ],
         "image": "tervo/'$NAME'",
         "name": "'$RUN_NAME'",
