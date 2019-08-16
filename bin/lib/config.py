@@ -110,6 +110,8 @@ def read(options):
         _bval('balance')
         _bval('evaluate')
         _bval('y_avg')
+        _bval('save_data')
+        _intval('pick_month')
 
         try:
             if options.label_column is None:
@@ -124,7 +126,7 @@ def read(options):
         _fval('alpha')
         _fval('eta0')
         _fval('power_t')
-        _bval('shuffle')
+        _bval('shuffle')        
 
         # ard model
         _fval('alpha_1')
@@ -142,6 +144,11 @@ def read(options):
         _intval('min_samples_split')
         _intval('min_samples_leaf')
         _intval('max_depth')
+
+        # SVC
+        _bval('probability')
+        _fval('penalty')
+        _fval('gamma')
 
         # lstm
         _intval('time_steps')

@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, math
 import argparse
 import logging
 import datetime as dt
@@ -32,38 +32,20 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
 
 
-from lib import io as _io
-from lib import viz as _viz
-from lib import bqhandler as _bq
+from lib.io import IO
+from lib.viz import Viz
+from lib.bqhandler import BQHandler
 from lib import imputer
 from lib import config as _config
-
-def report_cv_results(results, filename=None, n_top=3):
-    res = ""
-    for i in range(1, n_top + 1):
-        candidates = np.flatnonzero(results['rank_test_score'] == i)
-        for candidate in candidates:
-            res += "Model with rank: {0}\n".format(i)
-            res += "Mean validation score: {0:.3f} (std: {1:.3f})\n".format(
-                  results['mean_test_score'][candidate],
-                  results['std_test_score'][candidate])
-            res += "Parameters: {0}\n".format(results['params'][candidate])
-            res += "\n"
-
-    if filename is not None:
-        with open(filename, 'w') as f:
-            f.write(res)
-
-    logging.info(res)
 
 def main():
     """
     Get data from db and save it as csv
     """
 
-    bq = _bq.BQHandler()
-    io = _io.IO(gs_bucket=options.gs_bucket)
-    viz = _viz.Viz()
+    bq = BQHandler()
+    io = IO(gs_bucket=options.gs_bucket)
+    viz = Viz(io=io)
 
     starttime, endtime = io.get_dates(options)
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
@@ -87,7 +69,7 @@ def main():
                              max_iter=options.n_loops,
                              shuffle=options.shuffle,
                              power_t=options.power_t,
-                             penalty=options.penalty,
+                             penalty=options.regularizer,
                              learning_rate=options.learning_rate,
                              eta0=options.eta0,
                              alpha=options.alpha,
@@ -120,7 +102,7 @@ def main():
                               whiten = options.whiten,
                               copy = False)
 
-    rmses, maes, r2s, start_times, end_times, end_times_obj = [], [], [], [], [], []
+    rmses, maes, r2s, skills, start_times, end_times, end_times_obj = [], [], [], [], [], [], []
     X_complete = [] # Used for feature selection
 
     start = starttime
@@ -147,11 +129,14 @@ def main():
                                         train_type_column='train_type',
                                         location_column='trainstation',
                                         time_column='time',
-                                        sum_columns=[options.label_column],
+                                        sum_columns=['train_count', 'delay'],
                                         aggs=aggs)
 
             if options.y_avg_hours is not None:
                 data = io.calc_running_delay_avg(data, options.y_avg_hours)
+
+            if options.y_avg:
+                data = io.calc_delay_avg(data)
 
             data.sort_values(by=['time', 'trainstation'], inplace=True)
 
@@ -160,6 +145,12 @@ def main():
                 data.drop(columns=['train_type'], inplace=True)
                 data = imputer.fit_transform(data)
                 data.loc[:, 'train_type'] = None
+
+            if options.month:
+                logging.info('Adding month to the dataset...')
+                data['month'] = data['time'].map(lambda x: x.month)
+                if 'month' not in options.feature_params:
+                    options.feature_params.append('month')
 
             if options.model == 'ard' and len(data) > options.n_samples:
                 logging.info('Sampling {} values from data...'.format(options.n_samples))
@@ -176,30 +167,31 @@ def main():
             end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
             continue
 
-        logging.debug('Labels shape: {}'.format(l_data.shape))
         logging.info('Processing {} rows...'.format(len(f_data)))
 
-        target = l_data.astype(np.float32).values
+        target = l_data.astype(np.float32).values.ravel()
         features = f_data.astype(np.float32).values
 
-        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.33)
+        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.1)
 
         logging.debug('Features shape: {}'.format(X_train.shape))
 
-        n_samples, n_dims = X_train.shape
-
         if options.normalize:
             logging.info('Normalizing data...')
-            scaler = StandardScaler()
-            X_train = scaler.fit_transform(X_train)
-            X_test = scaler.fit_transform(X_test)
+            xscaler, yscaler = StandardScaler(), StandardScaler()
+
+            X_train = xscaler.fit_transform(X_train)
+            X_test = xscaler.transform(X_test)
+
+            y_train = yscaler.fit_transform(y_train)
+            y_test = yscaler.transform(y_test)
 
         if options.pca:
             logging.info('Doing PCA analyzis for the data...')
             X_train = ipca.fit_transform(X_train)
             fname = options.output_path+'/ipca_explained_variance.png'
             viz.explained_variance(ipca, fname)
-            io._upload_to_bucket(filename=fname, ext_filename=fname)
+            #io._upload_to_bucket(filename=fname, ext_filename=fname)
             X_test = ipca.fit_transform(X_test)
 
         logging.debug('Features shape after pre-processing: {}'.format(X_train.shape))
@@ -241,8 +233,8 @@ def main():
             random_search.fit(X_train, y_train)
             logging.info("RandomizedSearchCV done.")
             fname = options.output_path+'/random_search_cv_results.txt'
-            report_cv_results(random_search.cv_results_, fname)
-            io._upload_to_bucket(filename=fname, ext_filename=fname)
+            io.report_cv_results(random_search.cv_results_, fname)
+            #io._upload_to_bucket(filename=fname, ext_filename=fname)
             sys.exit()
         else:
             logging.info('Training...')
@@ -265,14 +257,20 @@ def main():
                         meta_complete = data.loc[:, options.meta_params]
 
         # Metrics
+        # Mean delay over the whole dataset (both train and validation),
+        # used to calculate Brier Skill
+        mean_delay = 6.011229358531166
         y_pred = model.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         mae = mean_absolute_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)
+        rmse_stat = math.sqrt(mean_squared_error(y_test, np.full_like(y_test, mean_delay)))
+        skill = 1 - rmse / rmse_stat
 
         rmses.append(rmse)
         maes.append(mae)
         r2s.append(r2)
+        skills.append(skill)
         start_times.append(start.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times.append(end.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times_obj.append(end)
@@ -283,21 +281,28 @@ def main():
         logging.info('RMSE: {}'.format(rmse))
         logging.info('MAE: {}'.format(mae))
         logging.info('R2 score: {}'.format(r2))
+        logging.info('Brier Skill Score score: {}'.format(skill))
 
         start = end
         end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
         if end > endtime: end = endtime
 
     io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
+    if options.normalize:
+        fname = options.save_path+'/xscaler.pkl'
+        io.save_scikit_model(xscaler, filename=fname, ext_filename=fname)
+        fname = options.save_path+'/yscaler.pkl'
+        io.save_scikit_model(yscaler, filename=fname, ext_filename=fname)
+
     if options.model == 'rf':
         fname = options.output_path+'/rfc_feature_importance.png'
         viz.rfc_feature_importance(model.feature_importances_, fname, feature_names=options.feature_params)
-        io._upload_to_bucket(filename=fname, ext_filename=fname)
+        #io._upload_to_bucket(filename=fname, ext_filename=fname)
 
     try:
         fname = options.output_path+'/learning_over_time.png'
         viz.plot_learning_over_time(end_times_obj, rmses, maes, r2s, filename=fname)
-        io._upload_to_bucket(filename=fname, ext_filename=fname)
+        #io._upload_to_bucket(filename=fname, ext_filename=fname)
     except Exception as e:
         logging.error(e)
 
@@ -305,7 +310,8 @@ def main():
                   'end_times': end_times,
                   'rmse': rmses,
                   'mae': maes,
-                  'r2': r2s}
+                  'r2': r2s,
+                  'skill': skills}
     fname = '{}/training_time_validation_errors.csv'.format(options.output_path)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
 
@@ -347,5 +353,9 @@ if __name__=='__main__':
                      'ERROR':logging.ERROR,
                      'CRITICAL':logging.CRITICAL}
     logging.basicConfig(format=("[%(levelname)s] %(asctime)s %(filename)s:%(funcName)s:%(lineno)s %(message)s"), level=logging_level[options.logging_level])
+
+
+    logging.info('Using configuration {}|{}'.format(options.config_filename,
+                                                    options.config_name))
 
     main()

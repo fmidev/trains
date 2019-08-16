@@ -154,13 +154,8 @@ class Predictor():
             data = self._normalise_data(xscaler, data)
 
         # Pick feature and label data from all data
-        l_data = data.loc[:,self.options.meta_params + self.options.label_params]
-        f_data = data.loc[:,self.options.meta_params + self.options.feature_params]
-
-        assert l_data.shape[0] == f_data.shape[0]
-
-        target = l_data['delay'].astype(np.float64).values.ravel()
-        features = f_data.drop(columns=['trainstation', 'time']).astype(np.float64).values
+        target = data.loc[:,self.options.label_params].astype(np.float64).values.ravel()
+        features = data.loc[:, self.options.feature_params].astype(np.float64).values
 
         y_pred = predictor.predict(features)
 

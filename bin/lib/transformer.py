@@ -19,7 +19,7 @@ class Selector:
 
         # If prediction not raise an exception, the classifier is fitted
         try:
-            self.classifier.predict(X[0,:])
+            self.classifier.predict(X[0:1,:])
         except NotFittedError as e:
             logging.info('...not fitted, fitting...')
             self.classifier.fit(X, y)
@@ -40,6 +40,16 @@ class Selector:
             return np.fromiter(map(lambda x: False if x < 0 else True, prediction), dtype=np.bool)
         else:
             return prediction
+
+    def predict_proba(self, X):
+        """
+        Predict with probabilities
+
+        X : np.array
+        """
+        logging.info('Predicting with probabilities by selector classifier...')
+        return self.classifier.predict_proba(X)
+    
 
     def fit_predict(self, X, y):
         """ Fit if not fitted and predict """
