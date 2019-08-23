@@ -347,3 +347,12 @@ services:
       image: tervo/pystan
       ports:
         - "80:8888"
+
+  geopandas:
+      volumes:
+        - ~/Dropbox/tyot/trains:/home/jovyan/work
+      environment:
+        - GOOGLE_APPLICATION_CREDENTIALS=/home/jovyan/work/cnf/TRAINS-full.json
+      image: tervo/geopandas
+      ports:
+        - "81:8888"
