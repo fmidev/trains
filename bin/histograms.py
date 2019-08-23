@@ -30,7 +30,8 @@ import lib.config as _config
 
 logging.basicConfig(format=("[%(levelname)s] %(asctime)s %(filename)s:%(funcName)s:%(lineno)s %(message)s"), level=logging.INFO)
 
-path = 'labels_vis_1_1/histograms'
+#path = 'labels_vis_1_1/histograms'
+path = 'results/histograms/dual_trains_data_2010_2019_winters_3_test'
 
 if not os.path.exists(path):
     os.makedirs(path)
@@ -71,10 +72,11 @@ all_data = bq.get_rows(starttime,
                        endtime,
                        loc_col='trainstation',
                        project=options.project,
-                       dataset='trains_2009_18_wo_testset',
-                       table='features_1',
+                       dataset='trains_data',
+                       table='dual_trains_data_2010_2019_winters_3_test',
                        parameters=all_param_names,
                        locations=stations)
+
 print('Filtering data...')
 all_data = io.filter_train_type(labels_df=all_data,
                             train_types=['K','L'],

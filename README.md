@@ -39,7 +39,9 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-xxx.json
 ```
 
 ## Data
-Data is stored in several csv files. See location above and structure of the files below.  
+Delay data is stored in csv files in directory data/full. See location above and structure of the files below.  
+
+Observation data can be obtained from https://opendata.fmi.fi. Please consult https://en.ilmatieteenlaitos.fi/open-data for documentation. You may also benefit the source code located in spark folder. 
 
 ### Delay data
 Data fields are following:
