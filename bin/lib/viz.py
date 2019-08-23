@@ -747,7 +747,7 @@ class Viz:
         """
         """
         plt.clf()
-        axs = df.plot(alpha=0.5, subplots=True, figsize=(60,80))
+        axs = df.plot(alpha=0.5, subplots=True, figsize=(15,20))
 
 #        import matplotlib.dates as mdates
 
@@ -875,17 +875,17 @@ class Viz:
 
     def plot_delay(self, all_times, all_delay=None, all_pred_delay=None,
                    heading='Delay', filename='delay.png',
-                   all_low=None, all_high=None):
+                   all_low=None, all_high=None, min_y=20):
         """
         Plot delay and predicted delay over time
         """
         plt.clf()
 
-        plt.rcParams.update({'font.size': 16})
+        plt.rcParams.update({'font.size': 20})
 
         splits = self._split_to_parts(all_times, [all_delay, all_pred_delay, all_low, all_high], 2592000)
         logging.info('Data have {} splits'.format(len(splits)))
-        fig, axes = plt.subplots(len(splits), 1, figsize=(28,15), sharex=False)
+        fig, axes = plt.subplots(len(splits), 1, figsize=(20,12), sharex=False)
 
         plt.grid()
         max_ = 0
@@ -936,7 +936,7 @@ class Viz:
             ax.xaxis.set_visible(True)
             ax.set_xlabel("Time")
             ax.set_ylabel("Delay [minutes]")
-            fig.suptitle(heading)
+            #fig.suptitle(heading, y=1.0)
 
             ax.grid(True)
             #fig.autofmt_xdate()
@@ -947,12 +947,13 @@ class Viz:
                 ax = axes[i]
             else:
                 ax = axes
-            if max_ <= 100:
-                ax.set_ylim([0,100])
+            if max_ <= min_y:
+                ax.set_ylim([0,min_y])
             else:
                 ax.set_ylim([0,max_])
 
         plt.subplots_adjust(hspace=0.5)
+        plt.tight_layout()
 
         self._save(plt, filename)
 

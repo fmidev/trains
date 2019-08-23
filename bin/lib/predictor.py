@@ -14,6 +14,10 @@ from tensorflow.contrib import predictor
 
 from keras.preprocessing.sequence import TimeseriesGenerator
 
+class PredictionError(Exception):
+   """Empty data exception"""
+   pass
+
 class Predictor():
 
     def __init__(self, io, model_loader, options):
@@ -61,13 +65,15 @@ class Predictor():
         batch_size = 512
 
         # print(data.loc[:, self.options.feature_params].dropna())
-        data_gen = TimeseriesGenerator(data.loc[:, self.options.feature_params].values,
-        #                               data.loc[:, self.options.label_params].values,
-                                       np.ones(len(data.loc[:, self.options.feature_params].values)),
-                                       length=self.options.time_steps,
-                                       sampling_rate=1,
-                                       batch_size=batch_size)
-        y_pred = model.predict_generator(data_gen)
+        try:
+            data_gen = TimeseriesGenerator(data.loc[:, self.options.feature_params].values,
+                                           np.ones(len(data.loc[:,self.options.feature_params].values)),
+                                           length=self.options.time_steps,
+                                           sampling_rate=1,
+                                           batch_size=batch_size)
+            y_pred = model.predict_generator(data_gen)
+        except ValueError as e:
+            raise PredictionError(e)
 
         if self.options.normalize:
             y_pred = yscaler.inverse_transform(y_pred)
