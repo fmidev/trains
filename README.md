@@ -101,14 +101,6 @@ Possible config values are (most of them are not used in every method):
 | alpha | - | 0. | Used in linear regression |
 | eta0 | - | 0. | Used in linear regression |
 | power_t | - | 0. | Used in linear regression |
-| alpha_1 | - | 0. | Used in ARD |
-| alpha_2 | - | 0. | Used in ARD |
-| lambda_1 | - | 0. | Used in ARD |
-| lambda_2 | - | 0. | Used in ARD |
-| fit_intercept | - | false | Used in ARD |
-| copy_x | - | false | Used in ARD |
-| threshold_lambda | - | 0. | Used in ARD |
-| n_samples | - | 0 | Used in ARD |
 | bootstrap | - | - | Used in RF |
 | n_estimators | - | - | Used in RF |
 | min_sample_split | - | - | Used in RF |
