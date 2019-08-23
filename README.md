@@ -1,6 +1,6 @@
 Research code for predicting train delays caused by weather.
 
-You are most probably NOT able to run this code without author's help. You may anyway check some particular details about the implementation.
+You are most probably NOT able to run this code without authors' help. You may anyway check some particular details about the implementation.
 
 Some general notions about running the code:
 - The data is assumed to be in Google Cloud BigQuery. Correct credentials has to be provided. For example (in dockerfile):
