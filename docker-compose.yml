@@ -1,73 +1,5 @@
 version: '3'
 services:
-  get_as_csv:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-    environment:
-      PYTHONUNBUFFERED: 1
-    image: tervo/ml:cpu
-    command: python -u bin/get_as_csv.py --dataset ${DATASET:-trains-10d-sample} --type ${TYPE:-feature} --starttime 2018-01-07 --endtime 2018-01-08
-
-#############
-  add_stations:
-    image: tervo/ml:cpu
-    command: python -u bin/add_locations.py --logging_level DEBUG --filename data/stations.json
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-    environment:
-      PYTHONUNBUFFERED: 1
-#############
-  labels_from_csv:
-    image: tervo/ml:cpu
-    command: python -u bin/labels_from_csv.py --logging_level INFO --filename ${LABEL_FILE:-data/subset/a_b_nayte.csv} --dataset ${DATASET:-trains-10d-sample} --job_count 10
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-#############
-  remove_dataset:
-    image: tervo/ml:cpu
-    command: python -u bin/remove_dataset.py --logging_level INFO --labels --features --dataset ${DATASET:-trains-10d-sample}
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-    environment:
-      PYTHONUNBUFFERED: 1
-#############
-  get_observations:
-    image: tervo/ml:cpu
-    command: python -u bin/get_observations.py --dataset ${DATASET:-trains-10d-sample} --producer opendata --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --job_count ${JOBS:-10} --logging_level ${LOGGING:-INFO}
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-#############
-  get_observations_batch:
-    image: tervo/ml:cpu
-    command: python -u bin/get_observations_batch.py --dataset ${DATASET:-trains-1.0} --producer fmi --starttime ${STARTTIME:-2018-01-01} --endtime ${ENDTIME:-2018-01-10} --job_count ${JOBS:-4} --logging_level ${LOGGING:-INFO}
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-#############
-  copy_dataset:
-    image: tervo/ml:cpu
-    command: python -u bin/copy_dataset.py --src_dataset ${SRC_DATASET:-trains-1.0} --dst_dataset ${DST_DATASET:-trains-1.2} --starttime ${STARTTIME:-2010-01-01} --endtime ${ENDTIME:-2013-01-10} --src_parameters ${SRC_PARAMETERS:-cnf/parameters.txt} --dst_parameters ${DST_PARAMETERS:-cnf/parameters_shorten.txt} --logging_level ${LOGGING:-INFO}
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-
-
-#############
-  sep_testset:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/sep_testset.py --logging_level ${LOGGING:-INFO}
 
 #############
   balance:
@@ -115,28 +47,6 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/train_scikit.py --config_filename cnf/lr.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
-#############
-  svr:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --config_filename cnf/svr.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
-#############
-  ard:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/train_scikit.py --config_filename cnf/ard.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 #############
   gp:
     volumes:
@@ -195,27 +105,6 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/classify_scikit.py --config_filename ${CONFIG_FILENAME:-cnf/rfc.ini} --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
-  class_gmm:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/classify_scikit_gmm.py --config_filename ${CONFIG_FILENAME:-cnf/gmm_bgm.ini} --config_name ${CONFIG_NAME:-test_gmm} --logging_level ${LOGGING:-INFO}
-  gmm:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/train_gmm.py --config_filename cnf/gmm_bgm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
-
   binary:
     volumes:
       - ~:/root:ro
@@ -236,20 +125,6 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/train_dual.py --config_filename cnf/dual.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
-
-#############
-  repr:
-    volumes:
-      - ~:/root:ro
-      - ~/trains:/a
-      - /tmp:/tmp
-    environment:
-      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
-    command: python -u bin/train_representation.py --config_filename cnf/rf.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
-
-
 
 
 
