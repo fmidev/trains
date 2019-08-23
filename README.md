@@ -18,7 +18,11 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-xxx.json
 |  |- lib                | libraries
 |  |  |- model_functions | required functions to load data into the model
 |- cnf                   | config files
-|- data                  | subset of data as csv
+|- data                  | data as csv
+|- |- full               | full data
+|  |  |- a_b_2010-18     | trains delayed between stations
+|  |  |- b_c_2010-18     | trains delayed at stations
+|- |- subset             | subset of data for experiments
 |- labels_vis_1_0_arch   | visualisation of label data
 |- labels_vis_1_1        | visualisation of label data
 |- spark                 | data fetching and pre-processing done with spark
@@ -35,7 +39,7 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-xxx.json
 ```
 
 ## Data
-Because of large amount of data, full data can't be added here. Subset of data is added for small tests and development.
+Data is stored in several csv files. See location above and structure of the files below.  
 
 ### Delay data
 Data fields are following:

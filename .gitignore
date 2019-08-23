@@ -7,7 +7,11 @@ cnf/pred_db.ini
 .\#*
 *.pyc
 .DS_Store
-data/full
+data/full/*.zip
+data/full/a_b_2015-18.csv
+data/full/b_c_2015-18.csv
+data/full/gratu_a_b_2010-14.csv
+data/full/gratu_b_c_2010-14.csv
 data/delay_and_weather_data
 models/
 results/
