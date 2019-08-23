@@ -22,5 +22,7 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 #CMD python -u bin/viz_performance.py --config_filename cnf/rf.ini --config_name 16_params_3
 
 #CMD python -u bin/histograms.py
-#CMD python -u  bin/viz_performance.py --config_filename cnf/lstm.ini --config_name all_params_sample_avg_1
-CMD python -u  bin/viz_performance.py --config_filename cnf/rf.ini --config_name all_params_avg_1
+
+#CMD python -u  bin/viz_performance.py --config_filename cnf/lr.ini --config_name all_params_avg_1
+#CMD python -u  bin/viz_performance.py --config_filename cnf/rf.ini --config_name all_params_avg_1
+CMD python -u  bin/viz_performance.py --config_filename cnf/lstm.ini --config_name all_params_avg_1

@@ -183,8 +183,12 @@ def main():
             X_train = xscaler.fit_transform(X_train)
             X_test = xscaler.transform(X_test)
 
-            y_train = yscaler.fit_transform(y_train)
-            y_test = yscaler.transform(y_test)
+            if len(options.label_params) == 1:
+                y_train = yscaler.fit_transform(y_train.reshape(-1, 1)).ravel()
+                y_test = yscaler.transform(y_test.reshape(-1, 1)).ravel()
+            else:
+                y_train = yscaler.fit_transform(y_train)
+                y_test = yscaler.transform(y_test)
 
         if options.pca:
             logging.info('Doing PCA analyzis for the data...')
@@ -259,7 +263,11 @@ def main():
         # Metrics
         # Mean delay over the whole dataset (both train and validation),
         # used to calculate Brier Skill
-        mean_delay = 6.011229358531166
+        if options.y_avg:
+            mean_delay = 3.375953418071136
+        else:
+            mean_delay = 6.011229358531166
+
         y_pred = model.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         mae = mean_absolute_error(y_test, y_pred)

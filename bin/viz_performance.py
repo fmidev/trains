@@ -23,7 +23,7 @@ from lib.bqhandler import BQHandler
 from lib.modelloader import ModelLoader
 
 from lib import config as _config
-from lib.predictor import Predictor
+from lib.predictor import Predictor, PredictionError
 
 def main():
     """
@@ -37,7 +37,10 @@ def main():
 
     # Mean delay over the whole dataset (both train and validation),
     # used to calculate Brier Skill
-    mean_delay = 6.011229358531166
+    if options.y_avg:
+        mean_delay = 3.375953418071136
+    else:
+        mean_delay = 6.011229358531166
 
     starttime, endtime = io.get_dates(options)
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
@@ -114,7 +117,11 @@ def main():
         station_count += 1
 
         # Run prediction
-        target, y_pred = predictor.pred(times, data)
+        try:
+            target, y_pred = predictor.pred(times, data)
+        except PredictionError as e:
+            logging.error(e)
+            continue
 
         if len(y_pred) < 1 or len(target) < 1:
             continue
