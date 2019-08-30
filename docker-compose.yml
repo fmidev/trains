@@ -169,6 +169,16 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
     image: tervo/ml:cpu
     command: python -u bin/draw_rfr.py --logging_level ${LOGGING:-INFO} --model_file ${MODEL_FILE:-model/model.pkl} --parameters_filename cnf/forecast_parameters_shorten.txt
+
+#############
+  llasso:
+    volumes:
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
+    image: tervo/ml:cpu
+    command: python -u bin/train_scikit.py --logging_level ${LOGGING:-INFO} --config_filename ${CONFIG_FILENAME:-cnf/llasso.ini} --config_name ${CONFIG_NAME:-test}
 #############
   hist:
     volumes:

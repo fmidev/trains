@@ -24,13 +24,13 @@ from sklearn.svm import SVR
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels \
     import RBF, WhiteKernel, RationalQuadratic, ExpSineSquared
+from lib.model_functions.LocalizedLasso import LocalizedLasso
 
 from sklearn.feature_selection import SelectFromModel
 
 from sklearn.metrics import mean_squared_error
 from sklearn.metrics import mean_absolute_error
 from sklearn.metrics import r2_score
-
 
 from lib.io import IO
 from lib.viz import Viz
@@ -96,6 +96,8 @@ def main():
 
         model = GaussianProcessRegressor(kernel=kernel_gpml, #alpha=0,
                                          optimizer=None, normalize_y=True)
+    elif options.model == 'llasso':
+        model = LocalizedLasso(num_iter=options.n_loops)
 
     if options.pca:
         ipca = IncrementalPCA(n_components=options.pca_components,
@@ -169,10 +171,11 @@ def main():
 
         logging.info('Processing {} rows...'.format(len(f_data)))
 
-        target = l_data.astype(np.float32).values.ravel()
-        features = f_data.astype(np.float32).values
-
-        X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.1)
+        train, test = train_test_split(data, test_size=0.1)
+        X_train = train.loc[:, options.feature_params].astype(np.float32).values
+        y_train = train.loc[:, options.label_params].astype(np.float32).values.ravel()
+        X_test = test.loc[:, options.feature_params].astype(np.float32).values
+        y_test = test.loc[:, options.label_params].astype(np.float32).values.ravel()
 
         logging.debug('Features shape: {}'.format(X_train.shape))
 
@@ -197,6 +200,10 @@ def main():
             viz.explained_variance(ipca, fname)
             #io._upload_to_bucket(filename=fname, ext_filename=fname)
             X_test = ipca.fit_transform(X_test)
+
+        if options.model == 'llasso':
+            graph_data = pd.read_csv(options.graph_data, names=['date', 'start_hour', 'src', 'dst', 'type', 'sum_delay','sum_ahead','add_delay','add_ahead','train_count'])
+            graph = model.fetch_connections(graph_data)
 
         logging.debug('Features shape after pre-processing: {}'.format(X_train.shape))
 
@@ -248,6 +255,8 @@ def main():
                     X_complete = X_train
                     y_complete = y_train
                     meta_complete = data.loc[:,options.meta_params]
+            elif options.model == 'llasso':
+                model.fit(X_train, y_train, train.loc[:, 'trainstation'].values)
             else:
                 model.partial_fit(X_train, y_train)
                 if options.feature_selection:
@@ -268,7 +277,12 @@ def main():
         else:
             mean_delay = 6.011229358531166
 
-        y_pred = model.predict(X_test)
+        if options.model == 'llasso':
+            print('X_test shape: {}'.format(X_test.shape))
+            y_pred, weights = model.predict(X_test, test.loc[:, 'trainstation'].values)
+        else:
+            y_pred = model.predict(X_test)
+
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         mae = mean_absolute_error(y_test, y_pred)
         r2 = r2_score(y_test, y_pred)

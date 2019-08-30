@@ -79,9 +79,9 @@ class Regression:
         self.model = Sequential()
         self.model.add(LSTM(options.time_steps,
                             input_shape=(options.time_steps, dim),
-                            activation='sigmoid',
-                            kernel_regularizer=regularizers.l2(0.),
-                            dropout=0.3)
+                            activation='sigmoid')
+                            # kernel_regularizer=regularizers.l2(0.),
+                            # dropout=0.3)
                        )
         #self.model.add(Dense(12, kernel_initializer=initializer))
         self.model.add(Dense(1, kernel_initializer=initializer))

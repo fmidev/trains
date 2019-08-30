@@ -141,12 +141,10 @@ class Predictor():
 
         return target, y_pred
 
-    def pred_scikit(self, times, data):
+    def pred_scikit(self, data):
         """
         Run SciKit prediction
 
-        times : lst
-                list of time steps to which prediction is to be done
         data : DataFrame
                feature and target data (got from bq.get_rows() and possibly
                filtered by filter_train_type(), sorted by time and trainstation )
@@ -170,6 +168,36 @@ class Predictor():
 
         return target, y_pred
 
+    def pred_llasso(self, data):
+        """
+        Run LocalizedLasso prediction
+
+        data : DataFrame
+               feature and target data (got from bq.get_rows() and possibly
+               filtered by filter_train_type(), sorted by time and trainstation )
+
+        return lst target, lst prediction
+        """
+        predictor = self.model_loader.load_scikit_model(self.options.save_path,
+                                                        self.options.save_file)
+
+        if self.options.normalize:
+            xscaler, yscaler = self.model_loader.load_scalers(self.options.save_path)
+            data = self._normalise_data(xscaler, data)
+
+        # Pick feature and label data from all data
+        target = data.loc[:,self.options.label_params].astype(np.float64).values.ravel()
+        features = data.loc[:, self.options.feature_params].astype(np.float64).values
+
+        y_pred, weights = predictor.predict(features, data.loc[:, 'trainstation'].values)
+
+        if self.options.normalize:
+            y_pred = yscaler.inverse_transform(y_pred)
+
+        self.weights = weights
+
+        return target, y_pred
+
     def pred(self, times, data):
         """
         Run SciKit prediction
@@ -186,5 +214,7 @@ class Predictor():
             return self.pred_keras(data)
         elif self.options.model_type == 'tf':
             return self.pred_tf(times, data)
-        else:
-            return self.pred_scikit(times, data)
+        elif self.options.model_type == 'llasso':
+            return self.pred_llasso(data)
+
+        return self.pred_scikit(data)

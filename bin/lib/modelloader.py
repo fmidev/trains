@@ -23,11 +23,9 @@ class ModelLoader():
         Load Scalers
         """
         fname=save_path+'/xscaler.pkl'
-        self.io._download_from_bucket(fname, fname, force=True)
         xscaler = self.io.load_scikit_model(fname)
 
         fname=save_path+'/yscaler.pkl'
-        self.io._download_from_bucket(fname, fname, force=True)
         yscaler = self.io.load_scikit_model(fname)
 
         return xscaler, yscaler
