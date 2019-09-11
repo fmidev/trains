@@ -98,6 +98,8 @@ def main():
                                          optimizer=None, normalize_y=True)
     elif options.model == 'llasso':
         model = LocalizedLasso(num_iter=options.n_loops)
+    elif options.model == 'nlasso':
+        model = LocalizedLasso(num_iter=options.n_loops, mode='network')
 
     if options.pca:
         ipca = IncrementalPCA(n_components=options.pca_components,
@@ -255,7 +257,13 @@ def main():
                     X_complete = X_train
                     y_complete = y_train
                     meta_complete = data.loc[:,options.meta_params]
-            elif options.model == 'llasso':
+            elif options.model in ['llasso', 'nlasso']:
+                graph_data = pd.read_csv(options.graph_data, names=['date', 'start_hour', 'src', 'dst', 'type', 'sum_delay','sum_ahead','add_delay','add_ahead','train_count'])
+
+                #stations_to_pick = options.stations_to_pick.split(',')
+                #graph = model.fetch_connections(graph_data, stations_to_pick)
+                model.fetch_connections(graph_data)
+
                 model.fit(X_train, y_train, train.loc[:, 'trainstation'].values)
             else:
                 model.partial_fit(X_train, y_train)

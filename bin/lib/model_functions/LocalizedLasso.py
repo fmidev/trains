@@ -1,11 +1,20 @@
+import sys
 import numpy as np
 import scipy.sparse as sp
 from numpy.matlib import repmat
 from scipy.sparse.linalg import spsolve
-from scipy.sparse import kron
+
+from scipy.sparse import kron, eye
+from scipy.sparse.linalg import inv
 from scipy.spatial.distance import cdist
 from sklearn.base import BaseEstimator
+from scipy.sparse import csc_matrix, vstack, issparse
 
+from sklearn.metrics import mean_squared_error
+
+import networkx as nx
+
+from memory_profiler import profile
 
 class LocalizedLasso(BaseEstimator):
     """ Localized Lasso with iterative-least squares optimization
@@ -13,7 +22,7 @@ class LocalizedLasso(BaseEstimator):
     Skeleton of the code taken from: https://riken-yamada.github.io/localizedlasso.html
     Paper: http://proceedings.mlr.press/v54/yamada17a/yamada17a.pdf
     """
-    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None):
+    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, mode='network', report_interval=100, clipping_threshold=None):
         """
             num_iter: int
                The number of iteration for iterative-least squares update: (default: 10)
@@ -26,6 +35,8 @@ class LocalizedLasso(BaseEstimator):
                0: No bias term
             R : n x n dimensional matrix
                connection between rows
+            mode : str
+                   'regression' | 'network'
 
             W: (d + 1) x n dimensional matrix
                i-th column vector corresponds to the model for w_i
@@ -40,8 +51,15 @@ class LocalizedLasso(BaseEstimator):
         self.lambda_exc = lambda_exc
         self.biasflag = biasflag
         self.R = R
+        self.mode = mode
 
-    def fetch_connections(self, data):
+        self.report_interval = report_interval
+        if clipping_threshold is None:
+            self.clipping_threshold = 1/7
+        else:
+            self.clipping_threshold = clipping_threshold
+
+    def fetch_connections(self, data, stations_to_pick=None):
         """
         Generate graph from given data
 
@@ -64,7 +82,23 @@ class LocalizedLasso(BaseEstimator):
             if dst not in all_stations:
                 all_stations.append(dst)
 
-        data.apply(lambda x: connect(x['src'], x['dst']), axis=1)
+        def connect_picked(src, dst):
+            if src in connections and src in stations_to_pick:
+                if dst not in connections[src] and dst in stations_to_pick:
+                    connections[src].append(dst)
+            elif src in stations_to_pick and dst in stations_to_pick:
+                connections[src] = [dst]
+
+            if src not in all_stations and src in stations_to_pick:
+                all_stations.append(src)
+            if dst not in all_stations and dst in stations_to_pick:
+                all_stations.append(dst)
+
+        if stations_to_pick is not None:
+            data.apply(lambda x: connect_picked(x['src'], x['dst']), axis=1)
+        else:
+            data.apply(lambda x: connect(x['src'], x['dst']), axis=1)
+
         self.connections = connections
         self.all_stations = all_stations
         return connections
@@ -81,6 +115,46 @@ class LocalizedLasso(BaseEstimator):
 
         return ndarray [num_rows, num_rows]
         """
+        print('Making connection matrix R...')
+        self.R = None
+        station_index = []
+        for row_station in stations:
+            row = []
+            for conn_station in stations:
+                # Train station may appear only as end station
+                if row_station not in self.connections:
+                    row.append(0)
+                # If row_station and conn_station are connected, add connection
+                elif conn_station in self.connections[row_station]:
+                    row.append(1)
+                else:
+                    row.append(0)
+
+            r_csc = csc_matrix(row)
+            self.R = vstack([self.R, r_csc])
+            station_index.append(row_station)
+
+        #self.R = np.array(R)
+        self.station_index = station_index
+
+        return self.R
+
+    def make_r_dense(self, stations, self_connections=True):
+        """
+        Make graph matrix based on data and connection info
+
+        Returns array defining how rows are connected to each others based
+        on train stations
+
+        stations : lst (n,)
+                   list of train station of each row in X
+
+        TODO: should this made to undirected by R = R + R.T ?
+        TODO should connections to self removed by R = R - np.eye(R.shape) ?
+
+        return ndarray [num_rows, num_rows]
+        """
+        print('Making dense connection matrix R...')
 
         R = []
         station_index = []
@@ -98,10 +172,25 @@ class LocalizedLasso(BaseEstimator):
             R.append(row)
             station_index.append(row_station)
 
-        self.R = np.array(R)
+        R = np.array(R)
+        n, d = R.shape
+        # Make undirected and remove self connections
+        if self_connections:
+            self.R = (R + R.T)
+        else:
+            self.R = (R + R.T) - np.eye(n,d)
+
         self.station_index = station_index
 
         return self.R
+
+    def set_graph(self, graph_matrix):
+        """
+        Set graph information matrix
+
+        graph_matrix : array (n,n)
+        """
+        self.R = graph_matrix
 
     def pick_W(self, stations):
         """
@@ -124,7 +213,102 @@ class LocalizedLasso(BaseEstimator):
 
         return np.array(W).T
 
-    def fit(self, X, y, stations, mode='regression'):
+    def wthresh(self, a, thresh):
+        """ Soft threshold """
+        a = np.reshape(a, (-1, 1))
+        res = np.array(np.abs(a) - thresh)
+        res[res<0] = 0
+        sign = np.array(np.sign(a))
+
+        return sign * res
+
+    def block_thresholding(self, W_in, X_idx, y, X, d, n, gamma_vec, feature_block_masked, feature_norm_squared_vec, debug=False):
+        """
+        Eq. 49 (?) --> solution of eq. 41
+
+        W_in : array (n*d, 1)
+               weights in
+        X_idx : list
+                list of sampling set indices in X
+        y : list
+            labels (same length than X_idx)
+        X : array (n, d)
+            features
+        d : int
+            feature dimensions
+        n : int
+            number of nodes
+        gamma_vec : lst or array (n,1)
+                  : limits for thresholding
+        feature_block_masked : array (9500 x 9500)
+                             : masked block feature matrix
+        feature_norm_squared_vec : ??
+                                   ??
+
+        return : array (d*n, 1)
+                 thresholded weights as a vector
+        """
+
+        X_out = feature_block_masked@W_in
+
+        W_in_row = np.reshape(W_in, (d,n), order='F')
+        W_in_coeff = np.sum(X*W_in_row, axis=0) / feature_norm_squared_vec
+
+        coeffs = np.zeros((n, 1))
+
+        # No loop
+        # coeff_delta = np.reshape(np.array(W_in_coeff[X_idx] - (y[X_idx] / feature_norm_squared_vec[X_idx])), (-1, 1))
+        # y_tmp = self.wthresh(coeff_delta, gamma_vec)
+        # a = np.array(y[X_idx] / feature_norm_squared_vec[X_idx])
+        # print('a: {}'.format(a.shape))
+        # coeffs[X_idx] = np.array(y[X_idx] / feature_norm_squared_vec[X_idx]) + y_tmp
+
+        # Same with loop
+        for id in X_idx:
+            tmp = W_in_coeff[id] - (y[id]/feature_norm_squared_vec[id])
+            y_temp = self.wthresh(tmp, gamma_vec[:,id])
+            coeffs[id] = (y[id]/feature_norm_squared_vec[id])+y_temp # checked
+
+        tmp = X@np.diagflat(coeffs) + np.reshape(X_out, (d, n), order='F') #checked
+
+        W_out = np.reshape(W_in, (d, n), order='F')
+        W_out[:, X_idx] = tmp[:, X_idx] # checked
+        W_out = np.reshape(W_out, (d*n, 1), order='F') # checked
+        return W_out
+
+    def block_clipping(self, W_in, d, n, lambda_):
+        """
+        eq. 40
+
+        W_in : array (n*d, 1)
+               weights in
+        d : int
+            feature dimensions
+        n : int
+            number of nodes
+        lambda_ : ??
+                  clipping threshold
+
+        return : array (n*d, 1)
+                 clipped weights
+        """
+
+        tmp = np.reshape(W_in, (d, n), order='F') # checked
+        X_norm = np.linalg.norm(tmp, axis=0)
+
+        # print('X_norm:{}'.format(X_norm.shape))
+        factor = np.ones((1, n))
+        idx_exceed = np.where(X_norm > lambda_)[0]
+        if len(idx_exceed) > 0:
+            np.put(factor, idx_exceed, (lambda_/X_norm[idx_exceed]))
+
+        W_out = np.reshape((tmp @ np.diagflat(factor)), (n*d, 1), order='F')
+
+        return W_out
+
+
+    #@profile
+    def fit(self, X, y, stations = None):
         """
         Fit the model
 
@@ -136,11 +320,16 @@ class LocalizedLasso(BaseEstimator):
                    list of train station of each row in X and y
         """
 
-        # Make connections how rows are connected to stations
-        R = self.make_r(stations)
+        # If not set, attemp to make connections how rows are connected to stations
+        if self.R is None:
+            R = self.make_r_dense(stations)
+        else:
+            R = self.R
 
-        if mode == 'regression':
+        if self.mode == 'regression':
             self.fit_regression(X.T, y.T, R)
+        if self.mode == 'network':
+            self.fit_primal_dual(X, y, R)
 
 
     def predict(self, X, stations):
@@ -155,13 +344,16 @@ class LocalizedLasso(BaseEstimator):
         return y_pred (lst [n,1]), weights (ndarray [n,d])
         """
 
-        # Make connections how rows are connected to stations
-        R = self.make_r(stations)
+        if self.mode == 'regression':
+            # Make connections how rows are connected to stations
+            R = self.make_r_dense(stations)
 
-        # Pick weights based on stations of each row in X
-        W = self.pick_W(stations)
+            # Pick weights based on stations of each row in X
+            W = self.pick_W(stations)
 
-        return self.prediction(X, R, W)
+            return self.prediction(X, R, W)
+        else:
+            self.predict_primal_dual(X, self.W)
 
         # Paper did this this way:
         #n, d = X.shape
@@ -183,12 +375,8 @@ class LocalizedLasso(BaseEstimator):
         return y_pred (lst [n,1]), weights (ndarray [n,d])
         """
         [d,n] = W.shape
-        # print('Prediction')
-        # print(self.W.shape)
-        # print(W.shape)
 
         wte = np.zeros((1,d))
-        # print('wte shape: {}'.format(wte.shape))
         loss_weber = np.zeros((20,1))
 
         if np.sum(R) == 0:
@@ -200,26 +388,137 @@ class LocalizedLasso(BaseEstimator):
 
                 sum_dist2 = np.sum(invdist2)
                 wte = np.dot(invdist2, W.transpose())/sum_dist2
-                # if(k == 0):
-                #     print('dist2 shape: {}'.format(dist2.shape))
-                #     print('R shape: {}'.format(R.shape))
-                #     print('invdist2 shape: {}'.format(invdist2.shape))
-                #     print('wte shape: {}'.format(wte.shape))
                 loss_weber[k] = np.sum(R*dist2)
 
         if self.biasflag == 1:
             yte = (wte[0][0:(d - 1)] * X).sum() + wte[0][d-1]
         else:
-            # print(wte[0].shape)
-            # print(X.shape)
-            # print((wte*X).shape)
-            #yte = (wte[0]*X).sum()
             yte = (wte*X).sum(1)
 
         return yte, wte
 
+    #@profile
+    def fit_primal_dual(self, X, y, R):
+        """
+        R = A
+        """
+
+        #print(X.shape)
+        n, d = X.shape
+        R = np.triu(R, 1)
+        nro_edges = len(R[R>0])
+
+        print('Number of rows: {}'.format(n))
+        print('Number of dimensions: {}'.format(d))
+        print('Number of edges: {}'.format(nro_edges))
+
+        np.set_printoptions(edgeitems=5, precision=4)
+        # D (eq 11.)
+        G = nx.from_numpy_matrix(R, create_using=nx.DiGraph())
+        D = nx.incidence_matrix(G, oriented=True).transpose()
+
+        W_edge = np.zeros((nro_edges,1))
+
+        # TODO pick indicies corresponding to existing labels
+        drop_idx = [22,17,21,8,6,4]
+        #X_sampling_idx = np.delete(np.arange(n), drop_idx)
+        X_sampling_idx = np.arange(n)
+        X_sampling = X.T
+        y_sampling = y
+
+        # What are we doing here?
+        mask = kron(eye(n,n), np.ones((d,d)))
+        feature_norm_squared_vec = np.sum(X_sampling**2, axis=0) # checked
+        feature_vec= np.reshape(X_sampling, (n*d, 1), order='F');
+
+        #features_norm_inv = spsolve(kron(np.diagflat(feature_norm_squared_vec), eye(d,d)), eye(n*d, n*d)) # checked
+        #feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ features_norm_inv) # checked, dense
+        print('Calculating masked X block matrix...')
+        feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ spsolve(kron(np.diagflat((feature_norm_squared_vec)), eye(d,d)), eye(n*d, n*d))) # checked, dense
+
+        print('Calculating D_block...')
+        D_block = kron(D.transpose(), eye(d, d)).transpose() # checked, sparse
+
+        print('Calculating lambda...')
+        lambda_ = np.diagflat((1./np.absolute(D).sum(axis=1))) # checked
+        lambda_block = kron(lambda_, eye(d, d)) # sparse
+
+        print('Calculating gamma...')
+        gamma_vec=(1./(np.absolute(D).sum(axis=0))) # checked
+        gamma = np.diagflat(gamma_vec, 0) # checked
+        gamma_block = kron(gamma, eye(d, d))
+
+        x_hat = np.zeros((n*d, 1))
+        y_hat = np.zeros((nro_edges*d, 1))
+
+        running_average = np.zeros((n*d, 1))
+        running_average_y = np.zeros((nro_edges*d, 1))
+
+        W_hat = np.zeros((n,1))
+
+        for i in np.arange(self.num_iter):
+
+            debug = False
+            if i > 0:
+                debug = False
+
+            # eq. 38
+            x_new = x_hat - .5 * gamma_block @ (D_block.transpose() @ y_hat)
+            x_new = self.block_thresholding(x_new,
+                                            X_sampling_idx,
+                                            y_sampling,
+                                            X_sampling,
+                                            d,
+                                            n,
+                                            gamma_vec,
+                                            feature_block_masked,
+                                            feature_norm_squared_vec,
+                                            debug) # checked
+
+            x_tilde = 2 * x_new - x_hat
+            x_hat = x_new
+
+            y_new = y_hat + .5 * lambda_block @ (D_block @ x_tilde)
+            y_hat = self.block_clipping(y_new, d, nro_edges, self.clipping_threshold) # checked
+
+            running_average = (running_average * (i) + x_hat) / (i+1)
+
+            if i % self.report_interval == 0:
+                self.W = np.reshape(running_average, (d,n), order='F').T
+                self.report_progress(X,
+                                     y,
+                                     self.W,
+                                     i)
+
+        self.W = np.reshape(running_average, (d,n), order='F').T
+
+    def report_progress(self, X, y, W, iteration):
+        """
+        Report fitting progress
+        """
+
+        y_pred = self.predict_primal_dual(X, W)
+        mse = mean_squared_error(y, y_pred)
+        # mse = np.linalg.norm(y_pred-y)**2 / np.linalg.norm(y)**2
+
+        print('Iteration {}/{}, MSE: {}'.format(iteration, self.num_iter, mse))
+
+    def predict_primal_dual(self, X, W):
+        """
+        Predict
+
+        This method assumes that training is done with primal-dual method
+
+        X : array (n, d)
+          : features
+
+        return array(n, 1)
+        """
+        return np.sum(X * W, axis=1)
+
     #Regression
-    def fit_regression(self,X,Y,R):
+    #@profile
+    def fit_regression(self, X, Y, R):
         """
         Fit regression case
 
@@ -230,6 +529,7 @@ class LocalizedLasso(BaseEstimator):
         R : ndarray [n, n]
             connection matrix telling each row's relation to each others
         """
+        print('Fitting...')
         [d,ntr0] = X.shape
 
         if self.biasflag == 1:
@@ -264,16 +564,20 @@ class LocalizedLasso(BaseEstimator):
         I_d = sp.diags(one_d, 0, format='csc')
 
         fval = np.zeros(self.num_iter)
-        for iter in range(0,self.num_iter):
+        for iter in range(0, self.num_iter):
 
+            # print(D.shape)
+            # print(A.shape)
             DinvA = spsolve(D, A.transpose())
+            #dinv_a_dense = np.linalg.solve(D.toarray(), A.transpose().toarray())
+
             B = I_ntr + A.dot(DinvA)
             tmp = spsolve(B,Ytr)
             vecW = DinvA.dot(tmp)
 
-            W = np.reshape(vecW,(ntr,d),order='F')
+            W = np.reshape(vecW, (ntr,d), order='F')
 
-            tmpNet = cdist(W,W)
+            tmpNet = cdist(W, W)
             tmp = tmpNet*R
 
             #Network regularization
@@ -288,7 +592,7 @@ class LocalizedLasso(BaseEstimator):
             AA = (AA + AA.transpose())*0.5 + 0.001*sp.eye(ntr,ntr)
 
             # Update Fe
-            Fe = kron(I_d, AA, format='csc')
+            #Fe = kron(I_d, AA, format='csc')
 
             #Exclusive regularization
             if self.biasflag == 1:
@@ -312,13 +616,14 @@ class LocalizedLasso(BaseEstimator):
             Fg = sp.diags(tmp,0,format='csc')
 
             # lambda_exc * Fg + lambda_net * Fe
-            D = self.lambda_net*Fe + self.lambda_exc*Fg
+            #D = self.lambda_net*Fe + self.lambda_exc*Fg
+            D = self.lambda_net*kron(I_d, AA, format='csc') + self.lambda_exc*Fg
             fval[iter] = ((Ytr -A.dot(vecW))**2).sum() + self.lambda_net*U_net + self.lambda_exc*U_exc
 
             print('fval: {}'.format(fval[iter]))
 
         self.vecW = vecW
-        self.W = np.reshape(vecW,(ntr,d),order='F').transpose()
+        self.W = np.reshape(vecW, (ntr,d), order='F').transpose()
         self.Yest = A.dot(vecW)
 
     # def fit_clustering(self,X,R):
