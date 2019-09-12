@@ -25,6 +25,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels \
     import RBF, WhiteKernel, RationalQuadratic, ExpSineSquared
 from lib.model_functions.LocalizedLasso import LocalizedLasso
+from lib.model_functions.NetworkLasso import NetworkLasso
 
 from sklearn.feature_selection import SelectFromModel
 
@@ -100,10 +101,9 @@ def main():
         model = LocalizedLasso(num_iter=options.n_loops,
                                batch_size=options.batch_size)
     elif options.model == 'nlasso':
-        model = LocalizedLasso(num_iter=options.n_loops,
-                               mode='network',
-                               batch_size=options.batch_size,
-                               n_jobs=-1)
+        model = NetworkLasso(num_iter=options.n_loops,
+                             batch_size=options.batch_size,
+                             n_jobs=-1)
 
         graph_data = pd.read_csv(options.graph_data, names=['date', 'start_hour', 'src', 'dst', 'type', 'sum_delay','sum_ahead','add_delay','add_ahead','train_count'])
 
