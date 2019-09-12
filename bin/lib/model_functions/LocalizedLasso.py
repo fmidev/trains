@@ -4,7 +4,7 @@ import multiprocessing as mp
 import concurrent.futures
 
 from numpy.matlib import repmat
-from math import floor
+from math import ceil
 
 import scipy.sparse as sp
 from scipy.sparse.linalg import spsolve, inv
@@ -360,7 +360,7 @@ class LocalizedLasso(BaseEstimator):
         end = self.batch_size
         n, d = X.shape
         # For reporting
-        self.batch_count = floor(n/self.batch_size)
+        self.batch_count = ceil(n/self.batch_size)
 
         print('Training in {} batches (size: {})'.format(self.batch_count, self.batch_size))
 
@@ -375,16 +375,16 @@ class LocalizedLasso(BaseEstimator):
         with concurrent.futures.ProcessPoolExecutor(process_count) as executor:
             i = 1
             results = []
-            while end <= n:
-                #print('Running batch {}/{}'.format(i, self.batch_count))
+            while start < n:
+                print('Running batch {}/{}'.format(i, self.batch_count))
                 x_batch = X[start:end,:]
                 y_batch = y[start:end]
                 r_batch = R[start:end,start:end]
+                futures.append(executor.submit(fit_primal_dual, x_batch, y_batch, r_batch, self.num_iter, self.clipping_threshold))
+
                 start += self.batch_size
                 end += self.batch_size
                 i+=1
-
-                futures.append(executor.submit(fit_primal_dual, x_batch, y_batch, r_batch, self.num_iter, self.clipping_threshold))
 
             for idx, future in enumerate(concurrent.futures.as_completed(futures)):
                 res = future.result()
