@@ -189,6 +189,15 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/test.py --logging_level ${LOGGING:-INFO} --config_filename ${CONFIG_FILENAME:-cnf/llasso.ini} --config_name ${CONFIG_NAME:-test}
 #############
+  runtest:
+    volumes:
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
+    image: tervo/ml:cpu
+    command: python -u bin/test_temp.py
+#############
   hist:
     volumes:
       - ~:/root:ro

@@ -1,16 +1,17 @@
 import sys
 import numpy as np
-import scipy.sparse as sp
+import multiprocessing as mp
+import concurrent.futures
+
 from numpy.matlib import repmat
-from scipy.sparse.linalg import spsolve
 from math import floor
 
-from scipy.sparse import kron, eye
-from scipy.sparse.linalg import inv
+import scipy.sparse as sp
+from scipy.sparse.linalg import spsolve, inv
+from scipy.sparse import kron, eye, csc_matrix, vstack, issparse
 from scipy.spatial.distance import cdist
-from sklearn.base import BaseEstimator
-from scipy.sparse import csc_matrix, vstack, issparse
 
+from sklearn.base import BaseEstimator
 from sklearn.metrics import mean_squared_error
 
 import networkx as nx
@@ -32,7 +33,7 @@ class LocalizedLasso(BaseEstimator):
     running_average_ = None
     coef_ = None
 
-    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, mode='network', report_interval=100, clipping_threshold=None, batch_size=None):
+    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, mode='network', report_interval=100, clipping_threshold=None, batch_size=None, n_jobs=-1):
         """
             num_iter: int
                The number of iteration for iterative-least squares update: (default: 10)
@@ -63,6 +64,7 @@ class LocalizedLasso(BaseEstimator):
         self.R = R
         self.mode = mode
         self.batch_size = batch_size
+        self.n_jobs=n_jobs
 
         self.report_interval = report_interval
         if clipping_threshold is None:
@@ -341,35 +343,55 @@ class LocalizedLasso(BaseEstimator):
             self.train_in_batches(X, y, R)
         else:
             self.batch_count = 1
-            coef, it = self.fit_primal_dual(X,
-                                            y,
-                                            R,
-                                            self.iteration_,
-                                            self.coef_)
+            coef, it = fit_primal_dual(X,
+                                       y,
+                                       R,
+                                       self.num_iter,
+                                       self.clipping_threshold,
+                                       self.iteration_,
+                                       self.coef_)
 
             self.coef_ = coef
             self.iteration_ = it
 
     def train_in_batches(self, X, y, R):
         """ Train in batches """
-        print('training in batches')
         start = 0
         end = self.batch_size
         n, d = X.shape
         # For reporting
         self.batch_count = floor(n/self.batch_size)
-        i = 1
-        while end <= n:
-            print('Running batch {}/{}'.format(i, self.batch_count))
-            x_batch = X[start:end,:]
-            y_batch = y[start:end]
-            r_batch = R[start:end,start:end]
 
-            self.partial_fit(x_batch, y_batch, r_batch)
+        print('Training in {} batches (size: {})'.format(self.batch_count, self.batch_size))
 
-            start += self.batch_size
-            end += self.batch_size
-            i+=1
+        process_count = 1
+        if self.n_jobs < 1:
+            process_count = min(mp.cpu_count(), self.batch_count)
+        else:
+            process_count = min(self.n_jobs, self.batch_count)
+
+        futures = []
+        coeffs = []
+        with concurrent.futures.ProcessPoolExecutor(process_count) as executor:
+            i = 1
+            results = []
+            while end <= n:
+                #print('Running batch {}/{}'.format(i, self.batch_count))
+                x_batch = X[start:end,:]
+                y_batch = y[start:end]
+                r_batch = R[start:end,start:end]
+                start += self.batch_size
+                end += self.batch_size
+                i+=1
+
+                futures.append(executor.submit(fit_primal_dual, x_batch, y_batch, r_batch, self.num_iter, self.clipping_threshold))
+
+            for idx, future in enumerate(concurrent.futures.as_completed(futures)):
+                res = future.result()
+                coeffs.append(res[0])
+                self.iteration_ += res[1]
+
+        self.coef_ = np.array(coeffs).mean(axis=0)
 
 
     #@profile
@@ -394,8 +416,12 @@ class LocalizedLasso(BaseEstimator):
 
             if self.batch_size is None or self.batch_size > len(X):
                 self.batch_count = 1
-                coef, _ = self.fit_primal_dual(X, y, R)
+                coef, i = fit_primal_dual(X,
+                                          y,
+                                          R,
+                                          self.num_iter, self.clipping_threshold)
                 self.coef_ = coef
+                self.iteration_ += i
             else:
                 self.train_in_batches(X, y, R)
 
@@ -464,147 +490,11 @@ class LocalizedLasso(BaseEstimator):
 
         return yte, wte
 
-    #@profile
-    def fit_primal_dual(self, X, y, R, iteration=0, W_average=None):
-        """
-        R = A
-        """
-
-        #print(X.shape)
-        n, d = X.shape
-        R = np.triu(R, 1)
-        nro_edges = len(R[R>0])
-
-        running_average = np.zeros((n*d, 1))
-
-        print('Number of rows: {}'.format(n))
-        print('Number of dimensions: {}'.format(d))
-        print('Number of edges: {}'.format(nro_edges))
-
-        np.set_printoptions(edgeitems=5, precision=4)
-        # D (eq 11.)
-        G = nx.from_numpy_matrix(R, create_using=nx.DiGraph())
-        D = nx.incidence_matrix(G, oriented=True).transpose()
-
-        W_edge = np.zeros((nro_edges,1))
-
-        # TODO pick indicies corresponding to existing labels
-        drop_idx = [22,17,21,8,6,4]
-        #X_sampling_idx = np.delete(np.arange(n), drop_idx)
-        X_sampling_idx = np.arange(n)
-        X_sampling = X.T
-        y_sampling = y
-
-        # Mask and normalised feature vectors
-        mask = kron(eye(n,n), np.ones((d,d)))
-        feature_norm_squared_vec = np.sum(X_sampling**2, axis=0) # checked
-        feature_vec = np.reshape(X_sampling, (n*d, 1), order='F');
-
-        #features_norm_inv = spsolve(kron(np.diagflat(feature_norm_squared_vec), eye(d,d)), eye(n*d, n*d)) # checked
-        #feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ features_norm_inv) # checked, dense
-        print('Calculating masked X block matrix...')
-        feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ spsolve(kron(np.diagflat((feature_norm_squared_vec)), eye(d,d, format='csc')), eye(n*d, n*d))) # checked, dense
-
-        print('Calculating D_block...')
-        D_block = kron(D.transpose(), eye(d, d)).transpose() # checked, sparse
-
-        # TODO better to use random, replace 0 with small value or skip the batch?
-        abs_sum_col = np.absolute(D).sum(axis=1)
-        #if np.count_nonzero(abs_sum_col) == len(abs_sum_col):
-        # eq. 14 (why differs?)
-        # TOCO rename to match with the article
-        # lambda_block = sigma
-        print('Calculating lambda...')
-        #lambda_ = np.diagflat((1./np.absolute(D).sum(axis=1))) # checked
-        lambda_block = kron(np.diagflat(np.nan_to_num(1./abs_sum_col)), eye(d, d)) # sparse
-        # else:
-        #     print('Warning! No connection in graph (cols), division by zero. Skipping batch...')
-        #     W = np.mean(np.reshape(running_average, (d,n), order='F').T, axis=0)
-        #     return W, running_average, iteration + self.num_iter
-        #     #lambda_block = sp.random(n*d, n*d)
-
-        abs_sum_row = np.absolute(D).sum(axis=0).ravel()
-        # print(abs_sum_row)
-        # print( np.count_nonzero(abs_sum_row) )
-        # print(len(abs_sum_row[0]))
-        # if np.count_nonzero(abs_sum_row) == len(abs_sum_row):
-        # gamma = T
-        print('Calculating gamma...')
-        gamma_vec=np.nan_to_num(1./abs_sum_row) # checked
-        #print(gamma_vec)
-        #gamma = np.diagflat(gamma_vec, 0) # checked
-        # else:
-        #     print('Warning! No connection in graph (rows), division by zero. Skipping batch...')
-        #     W = np.mean(np.reshape(running_average, (d,n), order='F').T, axis=0)
-        #     return W, running_average, iteration + self.num_iter
-            #gamma_vec = (1./np.random.random(D.shape).sum(axis=0)) wrong shape
-
-        gamma_block = kron(np.diagflat(gamma_vec, 0), eye(d, d))
-
-        w_hat = np.zeros((n*d, 1))
-        u_hat = np.zeros((nro_edges*d, 1))
-
-        for i in np.arange(self.num_iter):
-
-            debug = False
-            if i > 0:
-                debug = False
-
-            # alg. 2
-            w_new = w_hat - .5 * gamma_block @ (D_block.transpose() @ u_hat)
-            # alg. 3, eq. 19
-            w_new = self.block_thresholding(w_new,
-                                            X_sampling_idx,
-                                            y_sampling,
-                                            X_sampling,
-                                            d,
-                                            n,
-                                            gamma_vec,
-                                            feature_block_masked,
-                                            feature_norm_squared_vec,
-                                            debug) # checked
-
-            w_tilde = 2 * w_new - w_hat
-            w_hat = w_new
-
-            # alg. 4
-            u_new = u_hat + .5 * lambda_block @ (D_block @ w_tilde)
-            # alg. 5
-            u_hat = self.block_clipping(u_new, d, nro_edges, self.clipping_threshold) # checked
-
-            it = iteration + i
-            running_average = (running_average * it + w_hat) / (it+1)
-
-            if (i+1) % self.report_interval == 0:
-                # to predict missing labels
-                #self.W = np.reshape(running_average, (d,n), order='F').T
-
-                W_average = self.get_w_average(running_average, W_average, d, n, it)
-
-                self.report_progress(X,
-                                     y,
-                                     W_average,
-                                     it)
-
-        W_average = self.get_w_average(running_average, W_average, d, n, it)
-
-        return W_average, it
-
-    def get_w_average(self, running_average, W_average, d, n, it):
-        """ Get runnign average of weights """
-        # Traditional preidction for unseen data
-        W = np.mean(np.reshape(running_average, (d,n), order='F').T, axis=0)
-        if W_average is None:
-            W_average = W
-        else:
-            W_average = (W_average * it + W) / (it+1)
-        #self.W = np.mean(np.reshape(w_hat, (d,n), order='F').T, axis=0)
-
-        return W_average
-
     def report_progress(self, X, y, W, iteration):
         """
         Report fitting progress
+
+        To be moved or to be removed?
         """
 
         y_pred = self.predict_primal_dual(X, W)
@@ -799,3 +689,218 @@ class LocalizedLasso(BaseEstimator):
     #
     #     self.vecW = vecW
     #     self.W = np.reshape(vecW,(ntr,d),order='F').transpose()
+
+
+
+def pm_iteration(w_hat, gamma_block, D_block, u_hat, X_sampling_idx, y_sampling, X_sampling, d, n, gamma_vec, feature_block_masked, feature_norm_squared_vec, lambda_block, nro_edges, clipping_threshold, it):
+    # alg. 2
+    w_new = w_hat - .5 * gamma_block @ (D_block.transpose() @ u_hat)
+    # alg. 3, eq. 19
+    w_new = block_thresholding(w_new,
+                               X_sampling_idx,
+                               y_sampling,
+                               X_sampling,
+                               d,
+                               n,
+                               gamma_vec,
+                               feature_block_masked,
+                               feature_norm_squared_vec
+                               ) # checked
+
+    w_tilde = 2 * w_new - w_hat
+    w_hat = w_new
+
+    # alg. 4
+    u_new = u_hat + .5 * lambda_block @ (D_block @ w_tilde)
+    # alg. 5
+    u_hat = block_clipping(u_new, d, nro_edges, clipping_threshold) # checked
+
+    running_average = (running_average * it + w_hat) / (it+1)
+
+    return running_average
+
+
+def block_thresholding(W_in, X_idx, y, X, d, n, gamma_vec, feature_block_masked, feature_norm_squared_vec):
+    """
+    Eq. 49 (?) --> solution of eq. 41
+
+    W_in : array (n*d, 1)
+           weights in
+    X_idx : list
+            list of sampling set indices in X
+    y : list
+        labels (same length than X_idx)
+    X : array (n, d)
+        features
+    d : int
+        feature dimensions
+    n : int
+        number of nodes
+    gamma_vec : lst or array (n,1)
+              : limits for thresholding
+    feature_block_masked : array (9500 x 9500)
+                         : masked block feature matrix
+    feature_norm_squared_vec : ??
+                               ??
+
+    return : array (d*n, 1)
+             thresholded weights as a vector
+    """
+
+    X_out = feature_block_masked@W_in
+
+    W_in_row = np.reshape(W_in, (d,n), order='F')
+    W_in_coeff = np.sum(X*W_in_row, axis=0) / feature_norm_squared_vec
+
+    coeffs = np.zeros((n, 1))
+
+    # No loop
+    # coeff_delta = np.reshape(np.array(W_in_coeff[X_idx] - (y[X_idx] / feature_norm_squared_vec[X_idx])), (-1, 1))
+    # y_tmp = self.wthresh(coeff_delta, gamma_vec)
+    # a = np.array(y[X_idx] / feature_norm_squared_vec[X_idx])
+    # print('a: {}'.format(a.shape))
+    # coeffs[X_idx] = np.array(y[X_idx] / feature_norm_squared_vec[X_idx]) + y_tmp
+
+    # Same with loop
+    for id in X_idx:
+        tmp = W_in_coeff[id] - (y[id]/feature_norm_squared_vec[id])
+        y_temp = wthresh(tmp, gamma_vec[:,id])
+        coeffs[id] = (y[id]/feature_norm_squared_vec[id])+y_temp # checked
+
+    tmp = X@np.diagflat(coeffs) + np.reshape(X_out, (d, n), order='F') #checked
+
+    W_out = np.reshape(W_in, (d, n), order='F')
+    W_out[:, X_idx] = tmp[:, X_idx] # checked
+    W_out = np.reshape(W_out, (d*n, 1), order='F') # checked
+    return W_out
+
+def block_clipping(W_in, d, n, lambda_):
+    """
+    eq. 40
+
+    W_in : array (n*d, 1)
+           weights in
+    d : int
+        feature dimensions
+    n : int
+        number of nodes
+    lambda_ : ??
+              clipping threshold
+
+    return : array (n*d, 1)
+             clipped weights
+    """
+
+    tmp = np.reshape(W_in, (d, n), order='F') # checked
+    X_norm = np.linalg.norm(tmp, axis=0)
+
+    factor = np.ones((1, n))
+    idx_exceed = np.where(X_norm > lambda_)[0]
+    if len(idx_exceed) > 0:
+        np.put(factor, idx_exceed, (lambda_/X_norm[idx_exceed]))
+
+    W_out = np.reshape((tmp @ np.diagflat(factor)), (n*d, 1), order='F')
+
+    return W_out
+
+
+def fit_primal_dual(X, y, R, num_iter, clipping_threshold, iteration=0, W_average=None, ):
+    """
+    R = A
+    """
+
+    n, d = X.shape
+    R = np.triu(R, 1)
+    nro_edges = len(R[R>0])
+
+    running_average = np.zeros((n*d, 1))
+
+    np.set_printoptions(edgeitems=5, precision=4)
+    # D (eq 11.)
+    G = nx.from_numpy_matrix(R, create_using=nx.DiGraph())
+    D = nx.incidence_matrix(G, oriented=True).transpose()
+
+    W_edge = np.zeros((nro_edges,1))
+
+    # TODO pick indicies corresponding to existing labels
+    drop_idx = [22,17,21,8,6,4]
+    #X_sampling_idx = np.delete(np.arange(n), drop_idx)
+    X_sampling_idx = np.arange(n)
+    X_sampling = X.T
+    y_sampling = y
+
+    # Mask and normalised feature vectors
+    mask = kron(eye(n,n), np.ones((d,d)))
+    feature_norm_squared_vec = np.sum(X_sampling**2, axis=0) # checked
+    feature_vec = np.reshape(X_sampling, (n*d, 1), order='F');
+
+    feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ spsolve(csc_matrix(kron(np.diagflat(feature_norm_squared_vec), eye(d,d, format='csc'))), eye(n*d, n*d, format='csc'))) # checked, dense
+
+    D_block = kron(D.transpose(), eye(d, d)).transpose() #sparse
+
+    # TODO better to use random, replace 0 with small value or skip the batch?
+    abs_sum_col = np.absolute(D).sum(axis=1)
+    # eq. 14 (why differs?)
+    # TOCO rename to match with the article
+    # lambda_block = sigma
+    lambda_block = kron(np.diagflat(np.nan_to_num(1./abs_sum_col)), eye(d, d)) # sparse
+
+    abs_sum_row = np.absolute(D).sum(axis=0).ravel()
+
+    # gamma = T
+    gamma_vec=np.nan_to_num(1./abs_sum_row)
+    gamma_block = kron(np.diagflat(gamma_vec, 0), eye(d, d))
+
+    w_hat = np.zeros((n*d, 1))
+    u_hat = np.zeros((nro_edges*d, 1))
+
+    for i in np.arange(num_iter):
+        # alg. 2
+        w_new = w_hat - .5 * gamma_block @ (D_block.transpose() @ u_hat)
+        # alg. 3, eq. 19
+        w_new = block_thresholding(w_new,
+                                   X_sampling_idx,
+                                   y_sampling,
+                                   X_sampling,
+                                   d,
+                                   n,
+                                   gamma_vec,
+                                   feature_block_masked,
+                                   feature_norm_squared_vec)
+
+        w_tilde = 2 * w_new - w_hat
+        w_hat = w_new
+
+        # alg. 4
+        u_new = u_hat + .5 * lambda_block @ (D_block @ w_tilde)
+        # alg. 5
+        u_hat = block_clipping(u_new, d, nro_edges, clipping_threshold)
+
+        it = iteration + i
+        running_average = (running_average * it + w_hat) / (it+1)
+
+    W_average = get_w_average(running_average, W_average, d, n, it)
+
+    return W_average, it
+
+def get_w_average(running_average, W_average, d, n, it):
+    """ Get running average of weights """
+    # Traditional preidction for unseen data
+    W = np.mean(np.reshape(running_average, (d,n), order='F').T, axis=0)
+    if W_average is None:
+        W_average = W
+    else:
+        W_average = (W_average * it + W) / (it+1)
+    #self.W = np.mean(np.reshape(w_hat, (d,n), order='F').T, axis=0)
+
+    return W_average
+
+
+def wthresh(a, thresh):
+    """ Soft threshold """
+    a = np.reshape(a, (-1, 1))
+    res = np.array(np.abs(a) - thresh)
+    res[res<0] = 0
+    sign = np.array(np.sign(a))
+
+    return sign * res

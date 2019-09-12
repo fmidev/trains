@@ -102,7 +102,8 @@ def main():
     elif options.model == 'nlasso':
         model = LocalizedLasso(num_iter=options.n_loops,
                                mode='network',
-                               batch_size=options.batch_size)
+                               batch_size=options.batch_size,
+                               n_jobs=-1)
 
         graph_data = pd.read_csv(options.graph_data, names=['date', 'start_hour', 'src', 'dst', 'type', 'sum_delay','sum_ahead','add_delay','add_ahead','train_count'])
 
@@ -199,10 +200,10 @@ def main():
 
             if len(options.label_params) == 1:
                 y_train = yscaler.fit_transform(y_train.reshape(-1, 1)).ravel()
-                y_test = yscaler.transform(y_test.reshape(-1, 1)).ravel()
+                #y_test = yscaler.transform(y_test.reshape(-1, 1)).ravel()
             else:
                 y_train = yscaler.fit_transform(y_train)
-                y_test = yscaler.transform(y_test)
+                #y_test = yscaler.transform(y_test)
 
         if options.pca:
             logging.info('Doing PCA analyzis for the data...')
