@@ -97,9 +97,18 @@ def main():
         model = GaussianProcessRegressor(kernel=kernel_gpml, #alpha=0,
                                          optimizer=None, normalize_y=True)
     elif options.model == 'llasso':
-        model = LocalizedLasso(num_iter=options.n_loops)
+        model = LocalizedLasso(num_iter=options.n_loops,
+                               batch_size=options.batch_size)
     elif options.model == 'nlasso':
-        model = LocalizedLasso(num_iter=options.n_loops, mode='network')
+        model = LocalizedLasso(num_iter=options.n_loops,
+                               mode='network',
+                               batch_size=options.batch_size)
+
+        graph_data = pd.read_csv(options.graph_data, names=['date', 'start_hour', 'src', 'dst', 'type', 'sum_delay','sum_ahead','add_delay','add_ahead','train_count'])
+
+        #stations_to_pick = options.stations_to_pick.split(',')
+        #graph = model.fetch_connections(graph_data, stations_to_pick)
+        model.fetch_connections(graph_data)
 
     if options.pca:
         ipca = IncrementalPCA(n_components=options.pca_components,
@@ -257,14 +266,10 @@ def main():
                     X_complete = X_train
                     y_complete = y_train
                     meta_complete = data.loc[:,options.meta_params]
-            elif options.model in ['llasso', 'nlasso']:
-                graph_data = pd.read_csv(options.graph_data, names=['date', 'start_hour', 'src', 'dst', 'type', 'sum_delay','sum_ahead','add_delay','add_ahead','train_count'])
-
-                #stations_to_pick = options.stations_to_pick.split(',')
-                #graph = model.fetch_connections(graph_data, stations_to_pick)
-                model.fetch_connections(graph_data)
-
-                model.fit(X_train, y_train, train.loc[:, 'trainstation'].values)
+            elif options.model in ['llasso']:
+                model.fit(X_train, y_train, stations=train.loc[:, 'trainstation'].values)
+            elif options.model in ['nlasso']:
+                model.partial_fit(X_train, y_train, stations=train.loc[:, 'trainstation'].values)
             else:
                 model.partial_fit(X_train, y_train)
                 if options.feature_selection:
@@ -290,6 +295,9 @@ def main():
             y_pred, weights = model.predict(X_test, test.loc[:, 'trainstation'].values)
         else:
             y_pred = model.predict(X_test)
+
+        if options.normalize:
+            y_pred = yscaler.inverse_transform(y_pred)
 
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         mae = mean_absolute_error(y_test, y_pred)

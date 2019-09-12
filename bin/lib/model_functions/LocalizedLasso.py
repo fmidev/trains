@@ -3,6 +3,7 @@ import numpy as np
 import scipy.sparse as sp
 from numpy.matlib import repmat
 from scipy.sparse.linalg import spsolve
+from math import floor
 
 from scipy.sparse import kron, eye
 from scipy.sparse.linalg import inv
@@ -17,12 +18,21 @@ import networkx as nx
 from memory_profiler import profile
 
 class LocalizedLasso(BaseEstimator):
-    """ Localized Lasso with iterative-least squares optimization
+    """
+    Localized Lasso with iterative-least squares optimization
 
     Skeleton of the code taken from: https://riken-yamada.github.io/localizedlasso.html
     Paper: http://proceedings.mlr.press/v54/yamada17a/yamada17a.pdf
+
+    Network Lasso with primal-dual update
+    Paper:  https://arxiv.org/abs/1903.11178
     """
-    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, mode='network', report_interval=100, clipping_threshold=None):
+
+    iteration_ = 0
+    running_average_ = None
+    coef_ = None
+
+    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, mode='network', report_interval=100, clipping_threshold=None, batch_size=None):
         """
             num_iter: int
                The number of iteration for iterative-least squares update: (default: 10)
@@ -52,6 +62,7 @@ class LocalizedLasso(BaseEstimator):
         self.biasflag = biasflag
         self.R = R
         self.mode = mode
+        self.batch_size = batch_size
 
         self.report_interval = report_interval
         if clipping_threshold is None:
@@ -139,7 +150,7 @@ class LocalizedLasso(BaseEstimator):
 
         return self.R
 
-    def make_r_dense(self, stations, self_connections=True):
+    def make_r_dense(self, stations, allow_self_connections=True):
         """
         Make graph matrix based on data and connection info
 
@@ -175,7 +186,7 @@ class LocalizedLasso(BaseEstimator):
         R = np.array(R)
         n, d = R.shape
         # Make undirected and remove self connections
-        if self_connections:
+        if allow_self_connections:
             self.R = (R + R.T)
         else:
             self.R = (R + R.T) - np.eye(n,d)
@@ -306,6 +317,60 @@ class LocalizedLasso(BaseEstimator):
 
         return W_out
 
+    def get_R(self, stations=None):
+        """
+        Return R, generate it if necessary
+        """
+        if self.R is None:
+            self.R = self.make_r_dense(stations)
+
+        return self.R
+
+    def partial_fit(self, X, y, R=None, stations=None):
+        """
+        Partial fit
+        """
+        if self.mode != 'network':
+            raise "Partial fit not implemented in localized lasso"
+
+        # If R is not given, assume correct R to be stored via set_graph
+        if R is None:
+            R = self.make_r_dense(stations)
+
+        if self.batch_size is not None and self.batch_size < len(X):
+            self.train_in_batches(X, y, R)
+        else:
+            self.batch_count = 1
+            coef, it = self.fit_primal_dual(X,
+                                            y,
+                                            R,
+                                            self.iteration_,
+                                            self.coef_)
+
+            self.coef_ = coef
+            self.iteration_ = it
+
+    def train_in_batches(self, X, y, R):
+        """ Train in batches """
+        print('training in batches')
+        start = 0
+        end = self.batch_size
+        n, d = X.shape
+        # For reporting
+        self.batch_count = floor(n/self.batch_size)
+        i = 1
+        while end <= n:
+            print('Running batch {}/{}'.format(i, self.batch_count))
+            x_batch = X[start:end,:]
+            y_batch = y[start:end]
+            r_batch = R[start:end,start:end]
+
+            self.partial_fit(x_batch, y_batch, r_batch)
+
+            start += self.batch_size
+            end += self.batch_size
+            i+=1
+
 
     #@profile
     def fit(self, X, y, stations = None):
@@ -321,18 +386,20 @@ class LocalizedLasso(BaseEstimator):
         """
 
         # If not set, attemp to make connections how rows are connected to stations
-        if self.R is None:
-            R = self.make_r_dense(stations)
-        else:
-            R = self.R
+        R = self.get_R(stations)
 
         if self.mode == 'regression':
             self.fit_regression(X.T, y.T, R)
         if self.mode == 'network':
-            self.fit_primal_dual(X, y, R)
 
+            if self.batch_size is None or self.batch_size > len(X):
+                self.batch_count = 1
+                coef, _ = self.fit_primal_dual(X, y, R)
+                self.coef_ = coef
+            else:
+                self.train_in_batches(X, y, R)
 
-    def predict(self, X, stations):
+    def predict(self, X, stations=None):
         """
         Predict
 
@@ -353,7 +420,7 @@ class LocalizedLasso(BaseEstimator):
 
             return self.prediction(X, R, W)
         else:
-            self.predict_primal_dual(X, self.W)
+            return self.predict_primal_dual(X, self.coef_)
 
         # Paper did this this way:
         #n, d = X.shape
@@ -398,7 +465,7 @@ class LocalizedLasso(BaseEstimator):
         return yte, wte
 
     #@profile
-    def fit_primal_dual(self, X, y, R):
+    def fit_primal_dual(self, X, y, R, iteration=0, W_average=None):
         """
         R = A
         """
@@ -407,6 +474,8 @@ class LocalizedLasso(BaseEstimator):
         n, d = X.shape
         R = np.triu(R, 1)
         nro_edges = len(R[R>0])
+
+        running_average = np.zeros((n*d, 1))
 
         print('Number of rows: {}'.format(n))
         print('Number of dimensions: {}'.format(d))
@@ -426,35 +495,54 @@ class LocalizedLasso(BaseEstimator):
         X_sampling = X.T
         y_sampling = y
 
-        # What are we doing here?
+        # Mask and normalised feature vectors
         mask = kron(eye(n,n), np.ones((d,d)))
         feature_norm_squared_vec = np.sum(X_sampling**2, axis=0) # checked
-        feature_vec= np.reshape(X_sampling, (n*d, 1), order='F');
+        feature_vec = np.reshape(X_sampling, (n*d, 1), order='F');
 
         #features_norm_inv = spsolve(kron(np.diagflat(feature_norm_squared_vec), eye(d,d)), eye(n*d, n*d)) # checked
         #feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ features_norm_inv) # checked, dense
         print('Calculating masked X block matrix...')
-        feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ spsolve(kron(np.diagflat((feature_norm_squared_vec)), eye(d,d)), eye(n*d, n*d))) # checked, dense
+        feature_block_masked =  np.eye(n*d, n*d) - ( ((feature_vec@feature_vec.transpose()) * mask.toarray()) @ spsolve(kron(np.diagflat((feature_norm_squared_vec)), eye(d,d, format='csc')), eye(n*d, n*d))) # checked, dense
 
         print('Calculating D_block...')
         D_block = kron(D.transpose(), eye(d, d)).transpose() # checked, sparse
 
+        # TODO better to use random, replace 0 with small value or skip the batch?
+        abs_sum_col = np.absolute(D).sum(axis=1)
+        #if np.count_nonzero(abs_sum_col) == len(abs_sum_col):
+        # eq. 14 (why differs?)
+        # TOCO rename to match with the article
+        # lambda_block = sigma
         print('Calculating lambda...')
-        lambda_ = np.diagflat((1./np.absolute(D).sum(axis=1))) # checked
-        lambda_block = kron(lambda_, eye(d, d)) # sparse
+        #lambda_ = np.diagflat((1./np.absolute(D).sum(axis=1))) # checked
+        lambda_block = kron(np.diagflat(np.nan_to_num(1./abs_sum_col)), eye(d, d)) # sparse
+        # else:
+        #     print('Warning! No connection in graph (cols), division by zero. Skipping batch...')
+        #     W = np.mean(np.reshape(running_average, (d,n), order='F').T, axis=0)
+        #     return W, running_average, iteration + self.num_iter
+        #     #lambda_block = sp.random(n*d, n*d)
 
+        abs_sum_row = np.absolute(D).sum(axis=0).ravel()
+        # print(abs_sum_row)
+        # print( np.count_nonzero(abs_sum_row) )
+        # print(len(abs_sum_row[0]))
+        # if np.count_nonzero(abs_sum_row) == len(abs_sum_row):
+        # gamma = T
         print('Calculating gamma...')
-        gamma_vec=(1./(np.absolute(D).sum(axis=0))) # checked
-        gamma = np.diagflat(gamma_vec, 0) # checked
-        gamma_block = kron(gamma, eye(d, d))
+        gamma_vec=np.nan_to_num(1./abs_sum_row) # checked
+        #print(gamma_vec)
+        #gamma = np.diagflat(gamma_vec, 0) # checked
+        # else:
+        #     print('Warning! No connection in graph (rows), division by zero. Skipping batch...')
+        #     W = np.mean(np.reshape(running_average, (d,n), order='F').T, axis=0)
+        #     return W, running_average, iteration + self.num_iter
+            #gamma_vec = (1./np.random.random(D.shape).sum(axis=0)) wrong shape
 
-        x_hat = np.zeros((n*d, 1))
-        y_hat = np.zeros((nro_edges*d, 1))
+        gamma_block = kron(np.diagflat(gamma_vec, 0), eye(d, d))
 
-        running_average = np.zeros((n*d, 1))
-        running_average_y = np.zeros((nro_edges*d, 1))
-
-        W_hat = np.zeros((n,1))
+        w_hat = np.zeros((n*d, 1))
+        u_hat = np.zeros((nro_edges*d, 1))
 
         for i in np.arange(self.num_iter):
 
@@ -462,9 +550,10 @@ class LocalizedLasso(BaseEstimator):
             if i > 0:
                 debug = False
 
-            # eq. 38
-            x_new = x_hat - .5 * gamma_block @ (D_block.transpose() @ y_hat)
-            x_new = self.block_thresholding(x_new,
+            # alg. 2
+            w_new = w_hat - .5 * gamma_block @ (D_block.transpose() @ u_hat)
+            # alg. 3, eq. 19
+            w_new = self.block_thresholding(w_new,
                                             X_sampling_idx,
                                             y_sampling,
                                             X_sampling,
@@ -475,22 +564,43 @@ class LocalizedLasso(BaseEstimator):
                                             feature_norm_squared_vec,
                                             debug) # checked
 
-            x_tilde = 2 * x_new - x_hat
-            x_hat = x_new
+            w_tilde = 2 * w_new - w_hat
+            w_hat = w_new
 
-            y_new = y_hat + .5 * lambda_block @ (D_block @ x_tilde)
-            y_hat = self.block_clipping(y_new, d, nro_edges, self.clipping_threshold) # checked
+            # alg. 4
+            u_new = u_hat + .5 * lambda_block @ (D_block @ w_tilde)
+            # alg. 5
+            u_hat = self.block_clipping(u_new, d, nro_edges, self.clipping_threshold) # checked
 
-            running_average = (running_average * (i) + x_hat) / (i+1)
+            it = iteration + i
+            running_average = (running_average * it + w_hat) / (it+1)
 
-            if i % self.report_interval == 0:
-                self.W = np.reshape(running_average, (d,n), order='F').T
+            if (i+1) % self.report_interval == 0:
+                # to predict missing labels
+                #self.W = np.reshape(running_average, (d,n), order='F').T
+
+                W_average = self.get_w_average(running_average, W_average, d, n, it)
+
                 self.report_progress(X,
                                      y,
-                                     self.W,
-                                     i)
+                                     W_average,
+                                     it)
 
-        self.W = np.reshape(running_average, (d,n), order='F').T
+        W_average = self.get_w_average(running_average, W_average, d, n, it)
+
+        return W_average, it
+
+    def get_w_average(self, running_average, W_average, d, n, it):
+        """ Get runnign average of weights """
+        # Traditional preidction for unseen data
+        W = np.mean(np.reshape(running_average, (d,n), order='F').T, axis=0)
+        if W_average is None:
+            W_average = W
+        else:
+            W_average = (W_average * it + W) / (it+1)
+        #self.W = np.mean(np.reshape(w_hat, (d,n), order='F').T, axis=0)
+
+        return W_average
 
     def report_progress(self, X, y, W, iteration):
         """
@@ -498,12 +608,12 @@ class LocalizedLasso(BaseEstimator):
         """
 
         y_pred = self.predict_primal_dual(X, W)
-        mse = mean_squared_error(y, y_pred)
+        mse = np.sqrt(mean_squared_error(y, y_pred))
         # mse = np.linalg.norm(y_pred-y)**2 / np.linalg.norm(y)**2
 
-        print('Iteration {}/{}, MSE: {}'.format(iteration, self.num_iter, mse))
+        print('Iteration {}/{}, RMSE: {}'.format(iteration+1, self.batch_count * self.num_iter, mse))
 
-    def predict_primal_dual(self, X, W):
+    def predict_primal_dual(self, X, W, debug=False):
         """
         Predict
 
@@ -514,7 +624,17 @@ class LocalizedLasso(BaseEstimator):
 
         return array(n, 1)
         """
-        return np.sum(X * W, axis=1)
+        # Traditional prediction for unseen data
+        if debug:
+            print(X)
+            print(W)
+            y_pred = X@W
+            print(y_pred)
+
+        return X@W
+
+        # To predict missing labels
+        #return np.sum(X * W, axis=1)
 
     #Regression
     #@profile
@@ -549,13 +669,7 @@ class LocalizedLasso(BaseEstimator):
         D = sp.csc_matrix((val,(index,index)),shape=(dntr,dntr))
 
         #Generate input matrix
-        A = np.zeros((ntr,dntr)) #sp.csc_matrix((ntr,dntr))
-
-        for ii in range(0,ntr):
-            ind = range(ii,dntr,ntr)
-            A[ii,ind] = Xtr[:,ii]
-
-        A = sp.csc_matrix(A)
+        A = sp.csc_matrix(np.diagflat(Xtr))
 
         one_ntr = np.ones(ntr)
         I_ntr = sp.diags(one_ntr, 0, format='csc')
