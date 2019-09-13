@@ -28,9 +28,8 @@ class LocalizedLasso(BaseEstimator):
 
     iteration_ = 0
     running_average_ = None
-    coef_ = None
 
-    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, batch_size=None, n_jobs=-1):
+    def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, batch_size=None, n_jobs=-1, report_interval=10):
         """
             num_iter: int
                The number of iteration for iterative-least squares update: (default: 10)
@@ -61,11 +60,7 @@ class LocalizedLasso(BaseEstimator):
         self.R = R
         self.batch_size = batch_size
         self.n_jobs=n_jobs
-
-        if clipping_threshold is None:
-            self.clipping_threshold = 1/7
-        else:
-            self.clipping_threshold = clipping_threshold
+        self.report_interval = report_interval
 
     def fetch_connections(self, data, stations_to_pick=None):
         """
@@ -242,16 +237,14 @@ class LocalizedLasso(BaseEstimator):
             self.train_in_batches(X, y, R)
         else:
             self.batch_count = 1
-            coef, it = fit_primal_dual(X,
-                                       y,
+            self.W, _ = fit_regression(X.T,
+                                       y.T,
                                        R,
-                                       self.num_iter,
-                                       self.clipping_threshold,
-                                       self.iteration_,
-                                       self.coef_)
-
-            self.coef_ = coef
-            self.iteration_ = it
+                                       num_iter=self.num_iter,
+                                       biasflag=self.biasflag,
+                                       lambda_net=self.lambda_net,
+                                       lambda_exc=self.lambda_exc)
+            self.iteration_ = self.num_iter
 
     def train_in_batches(self, X, y, R):
         """ Train in batches """
@@ -270,16 +263,19 @@ class LocalizedLasso(BaseEstimator):
             process_count = min(self.n_jobs, self.batch_count)
 
         futures = []
-        coeffs = []
+        #coeffs = []
+        self.W = np.zeros((d, n))
+        #print(self.W.shape)
+        #vecWs = []
         with concurrent.futures.ProcessPoolExecutor(process_count) as executor:
-            i = 1
+            i = 0
             results = []
             while start < n:
-                print('Running batch {}/{}'.format(i, self.batch_count))
-                x_batch = X[start:end,:]
-                y_batch = y[start:end]
+                print('Running batch {}/{}'.format(i+1, self.batch_count))
+                x_batch = X[start:end,:].T
+                y_batch = y[start:end].T
                 r_batch = R[start:end,start:end]
-                futures.append(executor.submit(fit_primal_dual, x_batch, y_batch, r_batch, self.num_iter, self.clipping_threshold))
+                futures.append(executor.submit(fit_regression, x_batch, y_batch, r_batch, self.num_iter, self.biasflag, self.lambda_net, self.lambda_exc, i))
 
                 start += self.batch_size
                 end += self.batch_size
@@ -287,10 +283,19 @@ class LocalizedLasso(BaseEstimator):
 
             for idx, future in enumerate(concurrent.futures.as_completed(futures)):
                 res = future.result()
-                coeffs.append(res[0])
-                self.iteration_ += res[1]
+                d_, n_ = res[0].shape
 
-        self.coef_ = np.array(coeffs).mean(axis=0)
+                start = res[1] * self.batch_size
+                end = start + n_
+                self.W[:, start:end] = res[0]
+                self.iteration_ += self.num_iter
+
+        #print(np.array(coeffs).shape)
+        #print(np.array(vecWs).shape)
+
+        #self.coef_ = np.array(coeffs).mean(axis=0)
+        #print(self.coef_.shape)
+        #self.vecW = np.array(vecWs).mean(axis=0)
 
 
     #@profile
@@ -309,7 +314,17 @@ class LocalizedLasso(BaseEstimator):
         # If not set, attemp to make connections how rows are connected to stations
         R = self.get_R(stations)
 
-        self.fit_regression(X.T, y.T, R)
+        if self.batch_size is None or self.batch_size >= len(X):
+            self.W, _ = fit_regression(X.T,
+                                       y.T,
+                                       R,
+                                       num_iter=self.num_iter,
+                                       biasflag=self.biasflag,
+                                       lambda_net=self.lambda_net,
+                                       lambda_exc=self.lambda_exc)
+        else:
+            self.train_in_batches(X, y, R)
+
 
     def predict(self, X, stations=None):
         """
@@ -350,6 +365,8 @@ class LocalizedLasso(BaseEstimator):
 
         return y_pred (lst [n,1]), weights (ndarray [n,d])
         """
+        print(W.shape)
+        #print(W)
         [d,n] = W.shape
 
         wte = np.zeros((1,d))
@@ -373,166 +390,172 @@ class LocalizedLasso(BaseEstimator):
 
         return yte, wte
 
-    #Regression
-    #@profile
-    def fit_regression(self, X, Y, R):
-        """
-        Fit regression case
+#Regression
+#@profile
+def fit_regression(X, Y, R, num_iter, biasflag, lambda_net, lambda_exc, run_index=0):
+    """
+    Fit regression case
 
-        X : ndarray [n, d]
-            features
-        Y : list [n, 1]
-            labels
-        R : ndarray [n, n]
-            connection matrix telling each row's relation to each others
-        """
-        print('Fitting...')
-        [d,ntr0] = X.shape
+    X : ndarray [n, d]
+        features
+    Y : list [n, 1]
+        labels
+    R : ndarray [n, n]
+        connection matrix telling each row's relation to each others
+    """
+    print('Fitting...')
+    [d,ntr0] = X.shape
 
-        if self.biasflag == 1:
-            Xtr = np.concatenate((X, np.ones((1,ntr0))), axis=0)
+    if biasflag == 1:
+        Xtr = np.concatenate((X, np.ones((1,ntr0))), axis=0)
+    else:
+        Xtr = X
+
+    Ytr = Y
+
+    [d,ntr] = Xtr.shape
+    dntr = d*ntr
+
+    vecW = np.ones((dntr,1))
+    index = np.arange(0,dntr)
+    val = np.ones(dntr)
+    # D = lambda_exc * Fg + lambda_net * Fe
+    D = sp.csc_matrix((val,(index,index)),shape=(dntr,dntr))
+
+    #Generate input matrix
+    A = np.zeros((ntr,dntr))#sp.csc_matrix((ntr,dntr))
+
+    for ii in range(0,ntr):
+        ind = range(ii,dntr,ntr)
+        A[ii,ind] = Xtr[:,ii]
+
+    A = sp.csc_matrix(A)
+
+    one_ntr = np.ones(ntr)
+    I_ntr = sp.diags(one_ntr, 0, format='csc')
+
+    one_d = np.ones(d)
+    I_d = sp.diags(one_d, 0, format='csc')
+
+    fval = np.zeros(num_iter)
+    for iter in range(0, num_iter):
+
+        DinvA = spsolve(D, A.transpose().tocsc())
+
+        B = I_ntr + A.dot(DinvA)
+
+        tmp = spsolve(B, Ytr)
+        vecW = DinvA.dot(tmp)
+
+        W = np.reshape(vecW, (ntr,d), order='F')
+
+        tmpNet = cdist(W, W)
+        tmp = tmpNet*R
+
+        #Network regularization
+        U_net = tmp.sum()
+
+        tmp = 0.5 / (tmpNet + 10e-10) * R
+
+        td1 = sp.diags(tmp.sum(0),0)
+        td2 = sp.diags(tmp.sum(1),0)
+
+        AA = td1 + td2 - 2.0*tmp
+        AA = (AA + AA.transpose())*0.5 + 0.001*sp.eye(ntr,ntr)
+
+        # Update Fe
+        #Fe = kron(I_d, AA, format='csc')
+
+        #Exclusive regularization
+        if biasflag == 1:
+            tmp = abs(W[:,0:(d-1)]).sum(1)
+            U_exc = (tmp*tmp).sum()
+
+            tmp_repmat = repmat(np.c_[tmp],1,d)
+            tmp_repmat[:,d-1] = 0
+            tmp = tmp_repmat.flatten(order='F')
         else:
-            Xtr = X
+            tmp = abs(W).sum(1)
+            U_exc = (tmp*tmp).sum()
 
-        Ytr = Y
+            tmp_repmat = repmat(np.c_[tmp],1,d)
+            tmp = tmp_repmat.flatten(order='F')
 
-        [d,ntr] = Xtr.shape
-        dntr = d*ntr
+        #coef_ = abs(W).sum(0)
 
-        vecW = np.ones((dntr,1))
-        index = np.arange(0,dntr)
-        val = np.ones(dntr)
-        # D = lambda_exc * Fg + lambda_net * Fe
-        D = sp.csc_matrix((val,(index,index)),shape=(dntr,dntr))
+        # Update Fg
+        tmp = tmp / (abs(vecW) + 10e-10)
+        Fg = sp.diags(tmp,0,format='csc')
 
-        #Generate input matrix
-        A = sp.csc_matrix(np.diagflat(Xtr))
+        # lambda_exc * Fg + lambda_net * Fe
+        #D = self.lambda_net*Fe + self.lambda_exc*Fg
+        D = lambda_net*kron(I_d, AA, format='csc') + lambda_exc*Fg
+        fval[iter] = ((Ytr -A.dot(vecW))**2).sum() + lambda_net*U_net + lambda_exc*U_exc
 
-        one_ntr = np.ones(ntr)
-        I_ntr = sp.diags(one_ntr, 0, format='csc')
+        if iter % self.report_interval == 0:
+            print('fval (run {}): {}'.format(run_index, fval[iter]))
 
-        one_d = np.ones(d)
-        I_d = sp.diags(one_d, 0, format='csc')
+    W = np.reshape(vecW,(ntr,d),order='F').transpose()
+    #W = np.mean(np.reshape(vecW, (ntr,d), order='F').transpose(), axis=1)
 
-        fval = np.zeros(self.num_iter)
-        for iter in range(0, self.num_iter):
+    return W, run_index
 
-            # print(D.shape)
-            # print(A.shape)
-            DinvA = spsolve(D, A.transpose())
-            #dinv_a_dense = np.linalg.solve(D.toarray(), A.transpose().toarray())
-
-            B = I_ntr + A.dot(DinvA)
-            tmp = spsolve(B,Ytr)
-            vecW = DinvA.dot(tmp)
-
-            W = np.reshape(vecW, (ntr,d), order='F')
-
-            tmpNet = cdist(W, W)
-            tmp = tmpNet*R
-
-            #Network regularization
-            U_net = tmp.sum()
-
-            tmp = 0.5 / (tmpNet + 10e-10) * R
-
-            td1 = sp.diags(tmp.sum(0),0)
-            td2 = sp.diags(tmp.sum(1),0)
-
-            AA = td1 + td2 - 2.0*tmp
-            AA = (AA + AA.transpose())*0.5 + 0.001*sp.eye(ntr,ntr)
-
-            # Update Fe
-            #Fe = kron(I_d, AA, format='csc')
-
-            #Exclusive regularization
-            if self.biasflag == 1:
-                tmp = abs(W[:,0:(d-1)]).sum(1)
-                U_exc = (tmp*tmp).sum()
-
-                tmp_repmat = repmat(np.c_[tmp],1,d)
-                tmp_repmat[:,d-1] = 0
-                tmp = tmp_repmat.flatten(order='F')
-            else:
-                tmp = abs(W).sum(1)
-                U_exc = (tmp*tmp).sum()
-
-                tmp_repmat = repmat(np.c_[tmp],1,d)
-                tmp = tmp_repmat.flatten(order='F')
-
-            self.coef_ = abs(W).sum(0)
-
-            # Update Fg
-            tmp = tmp / (abs(vecW) + 10e-10)
-            Fg = sp.diags(tmp,0,format='csc')
-
-            # lambda_exc * Fg + lambda_net * Fe
-            #D = self.lambda_net*Fe + self.lambda_exc*Fg
-            D = self.lambda_net*kron(I_d, AA, format='csc') + self.lambda_exc*Fg
-            fval[iter] = ((Ytr -A.dot(vecW))**2).sum() + self.lambda_net*U_net + self.lambda_exc*U_exc
-
-            print('fval: {}'.format(fval[iter]))
-
-        self.vecW = vecW
-        self.W = np.reshape(vecW, (ntr,d), order='F').transpose()
-        self.Yest = A.dot(vecW)
-
-    # def fit_clustering(self,X,R):
-    #
-    #     [d,ntr] = X.shape
-    #     dntr = d*ntr
-    #
-    #     vecW = np.ones((dntr,1))
-    #     index = np.arange(0,dntr)
-    #     val = np.ones(dntr)
-    #     D = sp.csc_matrix((val,(index,index)),shape=(dntr,dntr))
-    #
-    #     #Generate input matrix
-    #     vecXtr = X.transpose().flatten(order='F')
-    #
-    #     one_d = np.ones(d)
-    #     I_d = sp.diags(one_d,0,format='csc')
-    #
-    #     one_dntr = np.ones(dntr)
-    #     I_dntr = sp.diags(one_dntr,0,format='csc')
-    #
-    #     fval = np.zeros(self.num_iter)
-    #     for iter in range(0,self.num_iter):
-    #
-    #         vecW = spsolve(D,vecXtr)
-    #
-    #         W = np.reshape(vecW,(ntr,d),order='F')
-    #
-    #         tmpNet = cdist(W,W)
-    #         tmp = tmpNet*R
-    #
-    #         #Network regularization
-    #         U_net = tmp.sum()
-    #
-    #         tmp = 0.5 / (tmpNet + 10e-10) * R
-    #
-    #         td1 = sp.diags(tmp.sum(0),0)
-    #         td2 = sp.diags(tmp.sum(1),0)
-    #
-    #         AA = td1 + td2 - 2.0*tmp
-    #         AA = (AA + AA.transpose())*0.5 + 0.00001*sp.eye(ntr,ntr)
-    #
-    #         Fe = kron(I_d,AA,format='csc')
-    #
-    #         #Exclusive regularization
-    #         tmp = abs(W).sum(1)
-    #         U_exc = (tmp*tmp).sum()
-    #
-    #         tmp_repmat = repmat(np.c_[tmp],1,d)
-    #         tmp = tmp_repmat.flatten(order='F')
-    #         tmp = tmp / (abs(vecW) + 10e-10)
-    #         Fg = sp.diags(tmp,0,format='csc')
-    #
-    #         D = I_dntr + self.lambda_net*Fe + self.lambda_exc*Fg
-    #
-    #         fval[iter] = ((vecXtr - vecW)**2).sum() + self.lambda_net*U_net + self.lambda_exc*U_exc
-    #
-    #         print('fval: {}'.format(fval[iter]))
-    #
-    #     self.vecW = vecW
-    #     self.W = np.reshape(vecW,(ntr,d),order='F').transpose()
+# def fit_clustering(self,X,R):
+#
+#     [d,ntr] = X.shape
+#     dntr = d*ntr
+#
+#     vecW = np.ones((dntr,1))
+#     index = np.arange(0,dntr)
+#     val = np.ones(dntr)
+#     D = sp.csc_matrix((val,(index,index)),shape=(dntr,dntr))
+#
+#     #Generate input matrix
+#     vecXtr = X.transpose().flatten(order='F')
+#
+#     one_d = np.ones(d)
+#     I_d = sp.diags(one_d,0,format='csc')
+#
+#     one_dntr = np.ones(dntr)
+#     I_dntr = sp.diags(one_dntr,0,format='csc')
+#
+#     fval = np.zeros(self.num_iter)
+#     for iter in range(0,self.num_iter):
+#
+#         vecW = spsolve(D,vecXtr)
+#
+#         W = np.reshape(vecW,(ntr,d),order='F')
+#
+#         tmpNet = cdist(W,W)
+#         tmp = tmpNet*R
+#
+#         #Network regularization
+#         U_net = tmp.sum()
+#
+#         tmp = 0.5 / (tmpNet + 10e-10) * R
+#
+#         td1 = sp.diags(tmp.sum(0),0)
+#         td2 = sp.diags(tmp.sum(1),0)
+#
+#         AA = td1 + td2 - 2.0*tmp
+#         AA = (AA + AA.transpose())*0.5 + 0.00001*sp.eye(ntr,ntr)
+#
+#         Fe = kron(I_d,AA,format='csc')
+#
+#         #Exclusive regularization
+#         tmp = abs(W).sum(1)
+#         U_exc = (tmp*tmp).sum()
+#
+#         tmp_repmat = repmat(np.c_[tmp],1,d)
+#         tmp = tmp_repmat.flatten(order='F')
+#         tmp = tmp / (abs(vecW) + 10e-10)
+#         Fg = sp.diags(tmp,0,format='csc')
+#
+#         D = I_dntr + self.lambda_net*Fe + self.lambda_exc*Fg
+#
+#         fval[iter] = ((vecXtr - vecW)**2).sum() + self.lambda_net*U_net + self.lambda_exc*U_exc
+#
+#         print('fval: {}'.format(fval[iter]))
+#
+#     self.vecW = vecW
+#     self.W = np.reshape(vecW,(ntr,d),order='F').transpose()

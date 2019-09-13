@@ -28,4 +28,4 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 #CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name nlasso_10d
 #CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name nlasso_1m
 
-CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name nlasso_1y
+CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name nlasso_7d

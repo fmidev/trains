@@ -198,6 +198,16 @@ services:
     image: tervo/ml:cpu
     command: python -u bin/test_temp.py
 #############
+  testloc:
+    volumes:
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
+    image: tervo/ml:cpu
+    command: python -u bin/test_loc.py
+
+#############
   hist:
     volumes:
       - ~:/root:ro
