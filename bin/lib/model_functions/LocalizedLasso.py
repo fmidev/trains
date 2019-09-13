@@ -243,7 +243,8 @@ class LocalizedLasso(BaseEstimator):
                                        num_iter=self.num_iter,
                                        biasflag=self.biasflag,
                                        lambda_net=self.lambda_net,
-                                       lambda_exc=self.lambda_exc)
+                                       lambda_exc=self.lambda_exc,
+                                       report_interval=self.report_interval)
             self.iteration_ = self.num_iter
 
     def train_in_batches(self, X, y, R):
@@ -275,7 +276,7 @@ class LocalizedLasso(BaseEstimator):
                 x_batch = X[start:end,:].T
                 y_batch = y[start:end].T
                 r_batch = R[start:end,start:end]
-                futures.append(executor.submit(fit_regression, x_batch, y_batch, r_batch, self.num_iter, self.biasflag, self.lambda_net, self.lambda_exc, i))
+                futures.append(executor.submit(fit_regression, x_batch, y_batch, r_batch, self.num_iter, self.biasflag, self.lambda_net, self.lambda_exc, i, report_interval))
 
                 start += self.batch_size
                 end += self.batch_size
@@ -321,7 +322,8 @@ class LocalizedLasso(BaseEstimator):
                                        num_iter=self.num_iter,
                                        biasflag=self.biasflag,
                                        lambda_net=self.lambda_net,
-                                       lambda_exc=self.lambda_exc)
+                                       lambda_exc=self.lambda_exc,
+                                       report_interval=self.report_interval)
         else:
             self.train_in_batches(X, y, R)
 
@@ -392,7 +394,7 @@ class LocalizedLasso(BaseEstimator):
 
 #Regression
 #@profile
-def fit_regression(X, Y, R, num_iter, biasflag, lambda_net, lambda_exc, run_index=0):
+def fit_regression(X, Y, R, num_iter, biasflag, lambda_net, lambda_exc, run_index=0, report_interval=100):
     """
     Fit regression case
 
@@ -492,7 +494,7 @@ def fit_regression(X, Y, R, num_iter, biasflag, lambda_net, lambda_exc, run_inde
         D = lambda_net*kron(I_d, AA, format='csc') + lambda_exc*Fg
         fval[iter] = ((Ytr -A.dot(vecW))**2).sum() + lambda_net*U_net + lambda_exc*U_exc
 
-        if iter % self.report_interval == 0:
+        if iter % report_interval == 0:
             print('fval (run {}): {}'.format(run_index, fval[iter]))
 
     W = np.reshape(vecW,(ntr,d),order='F').transpose()
