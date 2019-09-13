@@ -102,8 +102,7 @@ def main():
                                batch_size=options.batch_size)
     elif options.model == 'nlasso':
         model = NetworkLasso(num_iter=options.n_loops,
-                             batch_size=options.batch_size,
-                             n_jobs=-1)
+                             batch_size=options.batch_size)
 
         graph_data = pd.read_csv(options.graph_data, names=['date', 'start_hour', 'src', 'dst', 'type', 'sum_delay','sum_ahead','add_delay','add_ahead','train_count'])
 

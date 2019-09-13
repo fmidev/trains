@@ -27,7 +27,7 @@ class LocalizedLasso(BaseEstimator):
     """
 
     iteration_ = 0
-    running_average_ = None
+    W = None
 
     def __init__(self, num_iter=10, lambda_net=1, lambda_exc=0.01, biasflag=0, R=None, batch_size=None, n_jobs=-1, report_interval=10):
         """
@@ -197,9 +197,10 @@ class LocalizedLasso(BaseEstimator):
 
     def pick_W(self, stations):
         """
-        Pick weights from training set based on train stations. Note that
-        weights may occur at several rows since R matrix defines how
-        rows are connected to stations.
+        Pick weights from training set based on train stations.
+
+        Note that weights may occur at several rows since R matrix defines how
+        rows are connected to stations. In those cases mean are taken from the weights
 
         stations : lst (n,)
                    list of train station of each row in X
@@ -209,7 +210,9 @@ class LocalizedLasso(BaseEstimator):
         W = []
         for row_station in stations:
             try:
-                W.append(self.W[:, self.station_index.index(row_station)])
+                indexes = [i for i,j in enumerate(self.station_index) if row_station==j]
+                W.append(np.mean(self.W[:,indexes], axis=1))
+                #W.append(self.W[:, self.station_index.index(row_station)])
             except ValueError:
                 #probably not correct way to take the mean
                 W.append(self.W.mean(1))
@@ -225,27 +228,33 @@ class LocalizedLasso(BaseEstimator):
 
         return self.R
 
-    def partial_fit(self, X, y, R=None, stations=None):
+    def partial_fit(self, X, y, stations):
         """
         Partial fit
         """
         # If R is not given, assume correct R to be stored via set_graph
-        if R is None:
-            R = self.make_r_dense(stations)
+        #if R is None:
+        R = self.make_r_dense(stations)
+
+        if self.W is None:
+            n, d = X.shape
+            self.W = np.zeros((d,n))
 
         if self.batch_size is not None and self.batch_size < len(X):
-            self.train_in_batches(X, y, R)
+            W = self.train_in_batches(X, y, R)
         else:
             self.batch_count = 1
-            self.W, _ = fit_regression(X.T,
-                                       y.T,
-                                       R,
-                                       num_iter=self.num_iter,
-                                       biasflag=self.biasflag,
-                                       lambda_net=self.lambda_net,
-                                       lambda_exc=self.lambda_exc,
-                                       report_interval=self.report_interval)
+            W, _ = fit_regression(X.T,
+                                  y.T,
+                                  R,
+                                  num_iter=self.num_iter,
+                                  biasflag=self.biasflag,
+                                  lambda_net=self.lambda_net,
+                                  lambda_exc=self.lambda_exc,
+                                  report_interval=self.report_interval)
             self.iteration_ = self.num_iter
+
+        self.W = np.append(self.W, W, axis=1)
 
     def train_in_batches(self, X, y, R):
         """ Train in batches """
@@ -265,7 +274,7 @@ class LocalizedLasso(BaseEstimator):
 
         futures = []
         #coeffs = []
-        self.W = np.zeros((d, n))
+        W = np.zeros((d, n))
         #print(self.W.shape)
         #vecWs = []
         with concurrent.futures.ProcessPoolExecutor(process_count) as executor:
@@ -276,7 +285,7 @@ class LocalizedLasso(BaseEstimator):
                 x_batch = X[start:end,:].T
                 y_batch = y[start:end].T
                 r_batch = R[start:end,start:end]
-                futures.append(executor.submit(fit_regression, x_batch, y_batch, r_batch, self.num_iter, self.biasflag, self.lambda_net, self.lambda_exc, i, report_interval))
+                futures.append(executor.submit(fit_regression, x_batch, y_batch, r_batch, self.num_iter, self.biasflag, self.lambda_net, self.lambda_exc, i, self.report_interval))
 
                 start += self.batch_size
                 end += self.batch_size
@@ -288,9 +297,10 @@ class LocalizedLasso(BaseEstimator):
 
                 start = res[1] * self.batch_size
                 end = start + n_
-                self.W[:, start:end] = res[0]
+                W[:, start:end] = res[0]
                 self.iteration_ += self.num_iter
 
+        return W
         #print(np.array(coeffs).shape)
         #print(np.array(vecWs).shape)
 
@@ -325,7 +335,7 @@ class LocalizedLasso(BaseEstimator):
                                        lambda_exc=self.lambda_exc,
                                        report_interval=self.report_interval)
         else:
-            self.train_in_batches(X, y, R)
+            self.W = self.train_in_batches(X, y, R)
 
 
     def predict(self, X, stations=None):
@@ -367,8 +377,6 @@ class LocalizedLasso(BaseEstimator):
 
         return y_pred (lst [n,1]), weights (ndarray [n,d])
         """
-        print(W.shape)
-        #print(W)
         [d,n] = W.shape
 
         wte = np.zeros((1,d))
