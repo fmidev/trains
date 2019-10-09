@@ -28,4 +28,4 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 #CMD python -u  bin/viz_performance.py --config_filename cnf/lstm.ini --config_name all_params_avg_1
 
 
-CMD python -u  bin/viz_performance.py --config_filename cnf/llasso.ini --config_name nlasso_1m
+CMD python -u  bin/viz_performance.py --config_filename cnf/llasso.ini --config_name nlasso_1y

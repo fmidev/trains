@@ -214,7 +214,7 @@ class Predictor():
             return self.pred_keras(data)
         elif self.options.model_type == 'tf':
             return self.pred_tf(times, data)
-        elif self.options.model_type == 'llasso':
+        elif self.options.model_type in ['llasso', 'nlasso']:
             return self.pred_llasso(data)
 
         return self.pred_scikit(data)
