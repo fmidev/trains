@@ -12,7 +12,7 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow.python.estimator.export import export
 from tensorflow.python.framework import constant_op
-from tensorflow.contrib import predictor
+#from tensorflow.contrib import predictor
 
 from sklearn import metrics
 from sklearn.preprocessing import StandardScaler
@@ -93,6 +93,8 @@ def main():
                                     time_column='time',
                                     sum_columns=['train_count', 'delay'],
                                     aggs=aggs)
+
+        #
 
         if len(data) == 0:
             continue

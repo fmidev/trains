@@ -3,7 +3,7 @@ import sys, os, argparse, logging, json
 import tensorflow as tf
 from tensorflow.python.estimator.export import export
 from tensorflow.python.framework import constant_op
-from tensorflow.contrib import predictor
+#from tensorflow.contrib import predictor
 
 from keras.models import load_model
 
