@@ -75,6 +75,11 @@ def main():
         stationName = '{} ({})'.format(stationList[station]['name'], station)
         logging.info('Processing station {}'.format(stationName))
 
+        station_rmse[station] = {}
+        station_mae[station] = {}
+        station_r2[station] = {}
+        station_skill[station] = {}
+
         # Read data and filter desired train types (ic and commuter)
         data = bq.get_rows(starttime,
                            endtime,
@@ -151,23 +156,46 @@ def main():
         if options.only_avg == 1:
             continue
 
-        # Calculate errors for given station
-        rmse = math.sqrt(metrics.mean_squared_error(target, y_pred))
+        # Calculate errors for given station, first for all periods and then for whole time range
+        splits = viz._split_to_parts(list(times), [target, y_pred], 2592000)
+
+        for i in range(0, len(splits)):
+            times_, target_, y_pred_ = splits[i]
+
+            rmse = math.sqrt(metrics.mean_squared_error(target_, y_pred_))
+            mae = metrics.mean_absolute_error(target_, y_pred_)
+            r2 = metrics.r2_score(target_, y_pred_)
+            rmse_stat = math.sqrt(metrics.mean_squared_error(target_, np.full_like(target_, mean_delay)))
+            skill = 1 - rmse / rmse_stat
+
+            # Put errors to timeseries
+            station_rmse[station][i] = rmse
+            station_mae[station][i] = mae
+            station_r2[station][i] = r2
+            station_skill[station][i] = skill
+
+            logging.info('Month {}:'.format(i+1))
+            logging.info('RMSE of station {} month {}: {:.4f}'.format(stationName, i+1, rmse))
+            logging.info('MAE of station {} month {}: {:.4f}'.format(stationName, i+1, mae))
+            logging.info('R2 score of station {} month {}: {:.4f}'.format(stationName, i+1, r2))
+            logging.info('Skill (RMSE) of station {} month {}: {:.4f}'.format(stationName, i+1, skill))
+
+        mse = math.sqrt(metrics.mean_squared_error(target, y_pred))
         mae = metrics.mean_absolute_error(target, y_pred)
         r2 = metrics.r2_score(target, y_pred)
         rmse_stat = math.sqrt(metrics.mean_squared_error(target, np.full_like(target, mean_delay)))
         skill = 1 - rmse / rmse_stat
 
-        # Put errors to timeseries
-        station_rmse[station] = rmse
-        station_mae[station] = mae
-        station_r2[station] = r2
-        station_skill[station] = skill
+        station_rmse[station]['all'] = rmse
+        station_mae[station]['all'] = mae
+        station_r2[station]['all'] = r2
+        station_skill[station]['all'] = skill
 
-        logging.info('RMSE of station {}: {:.4f}'.format(stationName, rmse))
-        logging.info('MAE of station {}: {:.4f}'.format(stationName, mae))
-        logging.info('R2 score of station {}: {:.4f}'.format(stationName, r2))
-        logging.info('Skill (RMSE) of station {}: {:.4f}'.format(stationName, skill))
+        logging.info('All periods:')
+        logging.info('RMSE of station {} month {}: {:.4f}'.format(stationName, i+1, rmse))
+        logging.info('MAE of station {} month {}: {:.4f}'.format(stationName, i+1, mae))
+        logging.info('R2 score of station {} month {}: {:.4f}'.format(stationName, i+1, r2))
+        logging.info('Skill (RMSE) of station {} month {}: {:.4f}'.format(stationName, i+1, skill))
 
         # Create csv and upload it to pucket
         times_formatted = [t.strftime('%Y-%m-%dT%H:%M:%S') for t in times]
@@ -176,9 +204,12 @@ def main():
         io.write_csv(delay_data, fname, fname)
 
         # Draw visualisation
-        fname='{}/{}.png'.format(options.vis_path, station)
+        fname='{}/timeseries_{}.png'.format(options.vis_path, station)
         viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname)
-        io._upload_to_bucket(filename=fname, ext_filename=fname)
+
+        fname='{}/scatter_all_stations.png'.format(options.vis_path)
+        viz.scatter_predictions(times, target, y_pred, savepath=options.vis_path, filename='scatter_{}'.format(station))
+
 
     # Save all station related results to csv and upload them to bucket
     fname = '{}/station_rmse.csv'.format(options.vis_path)
@@ -201,28 +232,56 @@ def main():
     avg_delay = list(OrderedDict(sorted(avg_delay.items(), key=lambda t: t[0])).values())
     avg_pred_delay = list(OrderedDict(sorted(avg_pred_delay.items(), key=lambda t: t[0])).values())
 
-    # Calculate average over all times and stations
+    # Calculate average over all times and stations, first for all months separately, then for whole time range
+    splits = viz._split_to_parts(list(times), [avg_delay, avg_pred_delay], 2592000)
+
+    for i in range(0, len(splits)):
+        times_, avg_delay_, avg_pred_delay_ = splits[i]
+
+        rmse = math.sqrt(metrics.mean_squared_error(avg_delay_, avg_pred_delay_))
+        mae = metrics.mean_absolute_error(avg_delay_, avg_pred_delay_)
+        r2 = metrics.r2_score(avg_delay_, avg_pred_delay_)
+        rmse_stat = math.sqrt(metrics.mean_squared_error(avg_delay_, np.full_like(avg_delay_, mean_delay)))
+        skill = 1 - rmse/rmse_stat
+
+        logging.info('Month: {}'.format(i+1))
+        logging.info('RMSE of average delay over all stations: {:.4f}'.format(rmse))
+        logging.info('MAE of average delay over all stations: {:.4f}'.format(mae))
+        logging.info('R2 score of average delay over all stations: {:.4f}'.format(r2))
+        logging.info('Skill score (RMSE) of average delay over all stations: {:.4f}'.format(skill))
+
+        # Write average data into file
+        avg_errors = {'rmse': rmse, 'mae': mae, 'r2': r2,
+                      'skill': skill,
+                      'nro_of_samples': len(avg_delay)}
+        fname = '{}/avg_erros_{}.csv'.format(options.vis_path, i)
+        io.dict_to_csv(avg_errors, fname, fname)
+
+
     rmse = math.sqrt(metrics.mean_squared_error(avg_delay, avg_pred_delay))
-    rmse_mean = np.mean(list(station_rmse.values()))
+    #rmse_mean = np.mean(list(station_rmse.values()))
     mae = metrics.mean_absolute_error(avg_delay, avg_pred_delay)
-    mae_mean = np.mean(list(station_mae.values()))
+    #mae_mean = np.mean(list(station_mae.values()))
     r2 = metrics.r2_score(avg_delay, avg_pred_delay)
     rmse_stat = math.sqrt(metrics.mean_squared_error(avg_delay, np.full_like(avg_delay, mean_delay)))
     skill = 1 - rmse/rmse_stat
-    skill_mean = 1 - rmse_mean/rmse_stat
+    #skill_mean = 1 - rmse_mean/rmse_stat
 
+    logging.info('All periods:')
     logging.info('RMSE of average delay over all stations: {:.4f}'.format(rmse))
-    logging.info('Average RMSE of all station RMSEs: {:.4f}'.format(rmse_mean))
+    #logging.info('Average RMSE of all station RMSEs: {:.4f}'.format(rmse_mean))
     logging.info('MAE of average delay over all stations: {:.4f}'.format(mae))
-    logging.info('Average MAE of all station MAEs: {:.4f}'.format(mae_mean))
+    #logging.info('Average MAE of all station MAEs: {:.4f}'.format(mae_mean))
     logging.info('R2 score of average delay over all stations: {:.4f}'.format(r2))
     logging.info('Skill score (RMSE) of average delay over all stations: {:.4f}'.format(skill))
-    logging.info('Skill score (avg RMSE) of all stations: {:.4f}'.format(skill_mean))
+    #logging.info('Skill score (avg RMSE) of all stations: {:.4f}'.format(skill_mean))
 
     # Write average data into file
     avg_errors = {'rmse': rmse, 'mae': mae, 'r2': r2,
-                  'rmse_mean': rmse_mean, 'mae_mean': mae_mean,
-                  'skill': skill, 'skill_mean': skill_mean,
+                  #'rmse_mean': rmse_mean,
+                  #'mae_mean': mae_mean,
+                  'skill': skill,
+                  #'skill_mean': skill_mean,
                   'nro_of_samples': len(avg_delay)}
     fname = '{}/avg_erros.csv'.format(options.vis_path)
     io.dict_to_csv(avg_errors, fname, fname)
@@ -236,9 +295,11 @@ def main():
     io.write_csv(delay_data, fname, fname)
 
     # visualise
-    fname='{}/avg_all_stations.png'.format(options.vis_path)
+    fname='{}/timeseries_avg_all_stations.png'.format(options.vis_path)
     viz.plot_delay(all_times, avg_delay, avg_pred_delay, 'Average delay for all station', fname)
-    io._upload_to_bucket(filename=fname, ext_filename=fname)
+
+    fname='{}/scatter_all_stations.png'.format(options.vis_path)
+    viz.scatter_predictions(all_times, avg_delay, avg_pred_delay, savepath=options.vis_path, filename='scatter_all_stations')
 
 
 if __name__=='__main__':

@@ -126,6 +126,7 @@ def main():
         logging.info('Processing time range {} - {}'.format(start.strftime('%Y-%m-%d %H:%M'),
                                                             end.strftime('%Y-%m-%d %H:%M')))
 
+        # Load data ############################################################
         try:
             logging.info('Reading data...')
             data = bq.get_rows(start,
@@ -144,6 +145,10 @@ def main():
                                         time_column='time',
                                         sum_columns=['train_count', 'delay'],
                                         aggs=aggs)
+
+            # Filter only timesteps with large distribution in the whole network
+            if options.filter_delay_limit is not None:
+                data = io.filter_delay_with_limit(data, options.filter_delay_limit)
 
             if options.y_avg_hours is not None:
                 data = io.calc_running_delay_avg(data, options.y_avg_hours)
@@ -218,6 +223,10 @@ def main():
 
         logging.debug('Features shape after pre-processing: {}'.format(X_train.shape))
 
+
+
+        # FIT ##################################################################
+
         if options.cv:
             logging.info('Doing random search for hyper parameters...')
 
@@ -282,7 +291,42 @@ def main():
                         y_complete = y_train
                         meta_complete = data.loc[:, options.meta_params]
 
-        # Metrics
+
+
+
+        # EVALUATE #############################################################
+
+        # Check training score to estimate amount of overfitting
+        # Here we assume that we have a datetime index (from time columns)
+        y_pred_train = model.predict(X_train)
+        rmse_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
+        mae_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
+        logging.info('Training data RMSE: {} and MAE: {}'.format(rmse_train, mae_train))
+
+        #try:
+        if True:
+            print(train)
+            #range = ('2013-02-01','2013-02-28')
+            range = ('2010-01-01','2010-01-02')
+            X_train_sample = train.loc[range[0]:range[1], options.feature_params].astype(np.float32).values
+
+            target = train.loc[range[0]:range[1], options.label_params].astype(np.float32).values.ravel()
+            y_pred_sample = model.predict(X_train_sample)
+
+            times = train.loc[range[0]:range[1], 'time'].values
+            df = pd.DataFrame(times + y_pred_sample)
+            print(df)
+            sys.exit()
+
+            # Draw visualisation
+            fname='{}/timeseries_training_data.png'.format(options.output_path)
+            viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname)
+
+            fname='{}/scatter_all_stations.png'.format(options.vis_path)
+            viz.scatter_predictions(times, target, y_pred, savepath=options.vis_path, filename='scatter_{}'.format(station))
+        #except KeyError:
+        #    pass
+
         # Mean delay over the whole dataset (both train and validation),
         # used to calculate Brier Skill
         if options.y_avg:
@@ -325,6 +369,10 @@ def main():
         end = start + timedelta(days=int(options.day_step), hours=int(options.hour_step))
         if end > endtime: end = endtime
 
+
+
+
+    # SAVE #####################################################################
     io.save_scikit_model(model, filename=options.save_file, ext_filename=options.save_file)
     if options.normalize:
         fname = options.save_path+'/xscaler.pkl'
@@ -353,7 +401,11 @@ def main():
     fname = '{}/training_time_validation_errors.csv'.format(options.output_path)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
 
-    # Try doing feature selection
+
+
+
+
+    # FEATURE SELECTION ########################################################
     if options.feature_selection:
         logging.info('Doing feature selection...')
         selector = SelectFromModel(model, prefit=True)

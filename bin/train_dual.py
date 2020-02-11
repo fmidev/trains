@@ -113,7 +113,6 @@ def main():
         classifier = io.load_scikit_model(options.classifier_file)
     else:
         if options.classifier == 'svc':
-            print(options.penalty)
             params = {'kernel': options.kernel, 'gamma': options.gamma, 'C': options.penalty, 'probability': options.probability}
             classifier = SVC(**params)
         elif options.classifier == 'rfc':
@@ -178,6 +177,10 @@ def main():
 
     logging.info('Processing {} rows...'.format(len(data)))
 
+    # Filter only timesteps with large distribution in the whole network
+    if options.filter_delay_limit is not None:
+        data = io.filter_delay_with_limit(data, options.filter_delay_limit)
+
     # Binary class
     logging.info('Adding binary class to the dataset with limit {}...'.format(options.delay_limit))
     data['class'] = data['delay'].map(lambda x: 1 if x > options.delay_limit else -1)
@@ -189,6 +192,8 @@ def main():
     if options.balance:
         logging.info('Balancing training data...')
         count = data_train.groupby('class').size().min()
+        # SVC can't handle more than 50 000 samples
+        if options.classifier == 'svc': count = min(count, 50000)        
         data_train = pd.concat([data_train.loc[data_train['class'] == -1].sample(n=count),
         data_train.loc[data_train['class'] == 1].sample(n=count)])
 

@@ -1,4 +1,4 @@
-FROM tervo/ml:cpu
+FROM tervo/trains:cpu
 
 RUN apt-get install locales
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -20,4 +20,4 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 # CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name 2010-2019_winters_2
 # CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name 2010-2019_winters_3
 
-CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name 2010-2019_feb_1
+CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name whole-time-range-filter-10min

@@ -112,6 +112,7 @@ def read(options):
         _bval('y_avg')
         _bval('save_data')
         _intval('pick_month')
+        _intval('filter_delay_limit')
 
         try:
             if options.label_column is None:
@@ -126,7 +127,7 @@ def read(options):
         _fval('alpha')
         _fval('eta0')
         _fval('power_t')
-        _bval('shuffle')        
+        _bval('shuffle')
 
         # ard model
         _fval('alpha_1')

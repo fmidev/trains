@@ -957,6 +957,65 @@ class Viz:
 
         self._save(plt, filename)
 
+    def scatter_predictions(self, times, y, y_pred,
+                           y_label='Delay [minutes]',
+                           x_label='Predicted delay [minutes]',
+                           heading='True and predicted delay',
+                           savepath='.',
+                           filename='scatter'):
+        """
+        Plot y and y_pred to as scatter plot
+        """
+        plt.rc('font', size=40)
+
+        fig, ax = plt.subplots(figsize=(16,16))
+
+        max_ = max(y + y_pred)
+
+        splits = self._split_to_parts(times, [y, y_pred], 2592000)
+        logging.info('Data have {} splits'.format(len(splits)))
+
+        for i in range(0, len(splits)):
+            times, y_, y_pred_ = splits[i]
+
+            fname = '{}/{}_{}.png'.format(savepath, filename, i)
+            self.scatter_prediction(y_, y_pred_, y_label, x_label, heading, fname)
+
+        fname = '{}/{}_{}.png'.format(savepath, filename, 'all')
+        self.scatter_prediction(y, y_pred, y_label, x_label, heading, fname)
+
+    def scatter_prediction(self,  y, y_pred,
+                           y_label='True delay [minutes]',
+                           x_label='Predicted delay [minutes]',
+                           heading='',
+                           filename='scatter.png'):
+        """
+        Scatter prediction for single time split
+        """
+        plt.rc('font', size=40)
+
+        fig, ax = plt.subplots(figsize=(16,16))
+
+        max_ = max(y + y_pred)
+
+        plt.scatter(y, y_pred, color="#126cc5")
+        plt.ylabel(y_label)
+        plt.xlabel(x_label)
+        plt.title(heading)
+
+        plt.xlim(0, max_)
+        plt.ylim(0, max_)
+
+        plt.gca().set_aspect('equal', adjustable='box')
+
+        xticks = ax.xaxis.get_major_ticks()
+        xticks[0].label1.set_visible(False)
+
+        plt.tight_layout()
+
+        self._save(plt, filename)
+
+
     def plot_learning_over_time(self, times, rmse=None, mae=None,
                                 r2=None, heading='Model error development over time',
                                 filename='error.png'):

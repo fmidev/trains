@@ -326,7 +326,7 @@ class IO(Manipulator):
             bucket = client.get_bucket(self.bucket_name)
             tmp = tempfile.NamedTemporaryFile()
             blob = storage.Blob(filename, bucket)
-            blob.download_to_filename(str(tmp))            
+            blob.download_to_filename(str(tmp))
         else:
             tmp = filename
 
@@ -540,7 +540,27 @@ class IO(Manipulator):
         df[location_column] = df.apply(lambda row: change(row[location_column]), axis=1)
         return df
 
+    def filter_delay_with_limit(self, data, limit):
+        """
+        Set delay to 0 for all timesteps except of those with average of 'delay'
+        column over given limit
 
+        data  : DataFrame
+                Data. DataFrame with at least 'time' and 'delay' columns
+        limit : int
+                limit
+
+        return DataFrame
+        """
+        logging.info("Setting all delays with average delay at the time stamp below {} to 0...".format(limit))
+        data.set_index('time', drop=False, inplace=True)
+        def p(row):
+            if data.loc[row.time, 'delay'].mean() >= limit:
+                return row.delay
+            return 0
+
+        data.loc[:, 'delay'] = data.apply(lambda row: p(row), axis=1)
+        return data
 
     def find_id(self, locations, name):
         """
@@ -1113,9 +1133,6 @@ class IO(Manipulator):
                 logging.error('Errornous train count ({})'.format(x['train_count']))
                 return 0
             else:
-                #print(x['delay'])
-                #print(x['train_count'])
-                #print('...')
                 return x['delay']/x['train_count']
 
         data['delay'] = data.apply(avg , axis=1)
