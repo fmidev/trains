@@ -20,6 +20,10 @@ class PredictionError(Exception):
 
 class Predictor():
 
+    y_pred_bin = None
+    y_pred_bin_proba = None
+    mean_delay = 3.375953418071136
+
     def __init__(self, io, model_loader, options):
         self.io = io
         self.model_loader = model_loader
@@ -36,10 +40,14 @@ class Predictor():
 
         return DataFrame with scaled features
         """
+        try:
+            data.reset_index(inplace=True)
+        except ValueError:
+            data.reset_index(inplace=True, drop=True)
+
         non_scaled_data = data.loc[:,self.options.meta_params + self.options.label_params]
         scaled_features = pd.DataFrame(scaler.transform(data.loc[:,self.options.feature_params]),
                                        columns=self.options.feature_params)
-
         data = pd.concat([non_scaled_data, scaled_features], axis=1)
         return data
 
@@ -79,8 +87,6 @@ class Predictor():
             y_pred = yscaler.inverse_transform(y_pred)
 
         target = data.loc[self.options.time_steps:, self.options.label_params].values
-
-        print(target.shape)
 
         return target, y_pred
 
@@ -198,7 +204,61 @@ class Predictor():
 
         return target, y_pred
 
-    def pred(self, times, data):
+    def pred_dual(self, data):
+        """
+        Run dual prediction. First run classification and then regression prediction.
+
+        data : DataFrame
+               feature and target data (got from bq.get_rows() and possibly
+               filtered by filter_train_type(), sorted by time and trainstation )
+
+        return lst target, lst prediction
+        """
+        if self.options.classifier == 'lstm':
+            fname = self.options.save_path+'/classifier.h5'
+            classifier = self.model_loader.load_classifier(fname, fname, self.options)
+        else:
+            fname = self.options.save_path+'/classifier.pkl'
+            classifier = self.model_loader.load_scikit_model(fname, fname, True)
+
+        classifier.limit = self.options.class_limit
+
+        regressor = self.model_loader.load_scikit_model(self.options.save_file, self.options.save_file, True)
+
+        if self.options.normalize:
+            xscaler, yscaler = self.model_loader.load_scalers(self.options.save_path)
+            data = self._normalise_data(xscaler, data)
+
+        # Pick feature and label data from all data
+        features = data.loc[:, self.options.feature_params].astype(np.float64).values
+
+        logging.info('Predicting with classifier using limit {}...'.format(classifier.limit))
+        y_pred_bin = classifier.predict(features, type='bool')
+        #y_pred_bin = np.fromiter(map(lambda x: False if x < .5 else True, y_pred), dtype=np.bool)
+
+        self.y_pred_bin = y_pred_bin
+        self.y_pred_bin_proba = classifier.predict_proba(features)
+
+        # Pick only severe values
+        X = features[(len(features)-len(y_pred_bin)):]
+
+        logging.info('Predicting with regressor...')
+        y_pred_reg = regressor.predict(X)
+
+        if self.options.normalize and yscaler is not None:
+            y_pred_reg = yscaler.inverse_transform(y_pred_reg)
+
+        a = np.fromiter(map(lambda x: 0 if not x else 1, y_pred_bin), dtype=np.int32)
+        # LSTM do not have first time_steps
+        X = X[(len(X)-len(a)):]
+        y_pred =  np.choose(a, (np.full(X.shape[0], self.mean_delay), y_pred_reg))
+        #y_pred =  np.choose(a, (np.zeros(X.shape[0]), y_pred_reg))
+
+        target = data.loc[(len(features)-len(y_pred_bin)):, self.options.label_params].values.ravel()
+
+        return target, y_pred
+
+    def pred(self, times=None, data=None):
         """
         Run SciKit prediction
 
@@ -216,5 +276,7 @@ class Predictor():
             return self.pred_tf(times, data)
         elif self.options.model_type in ['llasso', 'nlasso']:
             return self.pred_llasso(data)
+        elif self.options.model_type == 'dual':
+            return self.pred_dual(data)
 
         return self.pred_scikit(data)

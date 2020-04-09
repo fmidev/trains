@@ -12,6 +12,7 @@ import matplotlib.ticker as ticker
 from keras.utils import plot_model
 from keras import activations
 from sklearn.metrics import confusion_matrix
+from sklearn import metrics
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc, precision_score, f1_score, recall_score, average_precision_score, precision_recall_curve
 from scipy import interp
@@ -693,7 +694,7 @@ class Viz:
             logging.info('Saved file {}'.format(filename))
             if self.bucket:
                 self.io._upload_to_bucket(filename, filename)
-        plt.close()
+        plt.close('all')
 
 
     # TRAINS ####################################################
@@ -826,6 +827,12 @@ class Viz:
         """
         Split time list to gaps
         """
+        # If times are pandas df or series, ensure that index runs from 0 to N
+        try:
+            times.reset_index(drop=True, inplace=True)
+        except AttributeError:
+            pass
+
         if gap is None:
             gaps = []
             prev = times[0]
@@ -875,17 +882,16 @@ class Viz:
 
     def plot_delay(self, all_times, all_delay=None, all_pred_delay=None,
                    heading='Delay', filename='delay.png',
-                   all_low=None, all_high=None, min_y=20):
+                   all_low=None, all_high=None, min_y=20, all_proba=None):
         """
         Plot delay and predicted delay over time
         """
         plt.clf()
-
         plt.rcParams.update({'font.size': 20})
 
-        splits = self._split_to_parts(all_times, [all_delay, all_pred_delay, all_low, all_high], 2592000)
+        splits = self._split_to_parts(all_times, [all_delay, all_pred_delay, all_low, all_high, all_proba], 2592000)
         logging.info('Data have {} splits'.format(len(splits)))
-        fig, axes = plt.subplots(len(splits), 1, figsize=(20,12), sharex=False)
+        fig, axes = plt.subplots(len(splits), 1, figsize=(20,16), sharex=False)
 
         plt.grid()
         max_ = 0
@@ -896,37 +902,39 @@ class Viz:
             else:
                 ax = axes
 
-            times, delay, pred_delay, low, high = splits[i]
+            lns = []
+
+            times, delay, pred_delay, low, high, proba = splits[i]
 
             max_ = 0
             if low[0] is not None and high[0] is not None:
-                ax.fill_between(times,
-                                high,
-                                low,
-                                facecolor="#ff7a7a",
-                                alpha=0.5,
-                                joinstyle='round',
-                                capstyle='round',
-                                label='Predicted delay 10-90 % quantile')
+                lns += ax.fill_between(times,
+                                       high,
+                                       low,
+                                       facecolor="#ff7a7a",
+                                       alpha=0.5,
+                                       joinstyle='round',
+                                       capstyle='round',
+                                       label='Predicted delay 10-90 % quantile')
 
                 if max(high) > max_:
                     max_ = max(high)
 
             if pred_delay is not None:
-                ax.plot(times,
-                         pred_delay,
-                         c="red",
-                         linewidth=0.75,
-                         label="Predicted delay")
+                lns += ax.plot(times,
+                               pred_delay,
+                               c="red",
+                               linewidth=0.75,
+                               label="Predicted delay")
                 if max(pred_delay) > max_:
                     max_ = max(pred_delay)
 
             if delay is not None:
-                ax.plot(times,
-                         delay,
-                         c="#126cc5",
-                         linewidth=0.75,
-                         label="True delay")
+                lns += ax.plot(times,
+                               delay,
+                               c="#126cc5",
+                               linewidth=0.75,
+                               label="True delay")
                 if max(delay) > max_:
                     max_ = max(delay)
 
@@ -940,7 +948,16 @@ class Viz:
 
             ax.grid(True)
             #fig.autofmt_xdate()
-            ax.legend()
+
+            if proba[0] is not None:
+                ax2 = ax.twinx()
+                lns += ax2.plot(times, proba, c='green', linestyle='--', linewidth=.75, label='Probability of disruptions')
+                ax2.set_ylim(0,1)
+                ax2.set_ylabel('Prob. of Disruptions')
+
+            labs = [l.get_label() for l in lns]
+            ax.legend(lns, labs, frameon=False, ncol=3)
+
 
         for i in range(0, len(splits)):
             if len(splits) > 1:
@@ -955,6 +972,7 @@ class Viz:
         plt.subplots_adjust(hspace=0.5)
         plt.tight_layout()
 
+        #plt.legend(lns, labs, frameon=False)
         self._save(plt, filename)
 
     def scatter_predictions(self, times, y, y_pred,
@@ -1014,6 +1032,60 @@ class Viz:
         plt.tight_layout()
 
         self._save(plt, filename)
+
+
+    def classification_perf_metrics(self, y_pred_proba, y_pred, y_test, options, times, station):
+        """
+        Calculate, print, save and plot performance metrics
+
+        Highly customized for viz_performance.py
+        """
+
+        try:
+            start = times[0].strftime('%Y-%m-%d')
+            end = times[-1].strftime('%Y-%m-%d')
+        except AttributeError:
+            # times are already datetime objects
+            start = times[0]
+            end = times[-1]
+
+        y_test =  np.fromiter(map(lambda x: 1 if x > options.delay_limit else -1, y_test), dtype=np.int32)
+        y_pred =  np.fromiter(map(lambda x: 1 if x else -1, y_pred), dtype=np.int32)
+        #print(y_pred)
+        #y_pred = list(map(int, y_pred))
+        y_pred_proba = np.array(y_pred_proba).reshape(-1, 2)
+
+        acc = metrics.accuracy_score(y_test, y_pred)
+        precision = metrics.precision_score(y_test, y_pred, average='binary')
+        recall = metrics.recall_score(y_test, y_pred, average='binary')
+        f1 = metrics.f1_score(y_test, y_pred, average='binary')
+
+        logging.info('Accuracy: {}'.format(acc))
+        logging.info('Precision: {}'.format(precision))
+        logging.info('Recall: {}'.format(recall))
+        logging.info('F1 score: {}'.format(f1))
+
+        error_data = {'acc': [acc],
+                      'precision': [precision],
+                      'recall': [recall],
+                      'f1': [f1]}
+        fname = '{}/test_classification_validation_errors_{}_{}_{}.csv'.format(options.vis_path, start, end, station)
+        self.io.write_csv(error_data, filename=fname, ext_filename=fname)
+
+        # Confusion matrices
+        fname = '{}/confusion_matrix_testset_{}_{}_{}.png'.format(options.vis_path, start, end, station)
+        self.plot_confusion_matrix(y_test, y_pred, np.arange(2), filename=fname)
+
+        fname = '{}/confusion_matrix_testset_{}_{}_{}_normalised.png'.format(options.vis_path, start, end, station)
+        self.plot_confusion_matrix(y_test, y_pred, np.arange(2), True, filename=fname)
+
+        # Precision-recall curve
+        fname = '{}/precision-recall-curve_testset_{}_{}_{}.png'.format(options.vis_path, start, end, station)
+        self.prec_rec_curve(y_test, y_pred_proba, filename=fname)
+
+        # ROC
+        fname = '{}/roc_testset_{}_{}_{}.png'.format(options.vis_path, start, end, station)
+        self.plot_binary_roc(y_test, y_pred_proba, filename=fname)
 
 
     def plot_learning_over_time(self, times, rmse=None, mae=None,

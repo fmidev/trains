@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
-import sys, os
+import sys, os, json, logging
 from sklearn.externals import joblib
 import numpy as np
 import pandas as pd
-import json
-import logging
+
 
 class Manipulator:
 

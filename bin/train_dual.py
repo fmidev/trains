@@ -193,7 +193,7 @@ def main():
         logging.info('Balancing training data...')
         count = data_train.groupby('class').size().min()
         # SVC can't handle more than 50 000 samples
-        if options.classifier == 'svc': count = min(count, 50000)        
+        if options.classifier == 'svc': count = min(count, 50000)
         data_train = pd.concat([data_train.loc[data_train['class'] == -1].sample(n=count),
         data_train.loc[data_train['class'] == 1].sample(n=count)])
 

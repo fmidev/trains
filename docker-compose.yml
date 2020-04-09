@@ -83,6 +83,18 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/ml:cpu
     command: python -u bin/classify.py --config_filename cnf/lstm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+
+  ############
+  ladder:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/trains:ladder
+    command: python -u Ladder-Network/ladder_trains.py --config_filename cnf/lstm.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
   ############
   autoencoder:
     volumes:
@@ -117,14 +129,25 @@ services:
     command: python -u bin/classify_transactions_scikit.py --config_filename cnf/binary.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
   dual:
     volumes:
-      - ~:/root:ro
+      - ~:/root:rw # Muuta ro:ksi!
       - ~/trains:/a
       - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/trains:cpu
+    image: tervo/trains:gpu
     command: python -u bin/train_dual.py --config_filename cnf/dual.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+
+  dual_lstm:
+    volumes:
+      - ~:/root:rw # Muuta ro:ksi!
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/trains:gpu
+    command: python -u bin/train_lstm_dual.py --config_filename cnf/dual.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
 
 
@@ -136,9 +159,9 @@ services:
       - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-      - HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/trains:cpu
-    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-all_params_avg_1} --logging_level ${LOGGING:-INFO} --stations PSL,OL #,VS#--only_avg 1 #--stations PSL,OL #,VS
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/trains:gpu
+    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-all_params_avg_1} --logging_level ${LOGGING:-INFO} --stations PSL #--only_avg 1 #--stations PSL,OL #,VS
 #############
   vizens:
     volumes:

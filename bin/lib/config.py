@@ -53,6 +53,10 @@ def read(options):
         options.label_params = options.label_params.split(',')
         options.meta_params = options.meta_params.split(',')
 
+        options.locations = getattr(options, 'locations', None)
+        if options.locations is not None:
+            options.locations = options.locations.split(',')
+
         try:
             options.gmm_params = options.gmm_params.split(',')
         except:
@@ -113,6 +117,8 @@ def read(options):
         _bval('save_data')
         _intval('pick_month')
         _intval('filter_delay_limit')
+        _fval('class_limit', .1)
+        _bval('smote')
 
         try:
             if options.label_column is None:
@@ -166,9 +172,6 @@ def read(options):
 
         # BayesianGaussianMixture (bgm)
         _intval('n_components', 4)
-
-        # autoencoders
-        _intval('class_limit', 4)
 
         # binary
         _intval('delay_count_limit')

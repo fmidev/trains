@@ -28,6 +28,7 @@ class BQHandler(object):
         self.batch_size = None
         self.reason_code_table = None
         self.where = None
+        self.only_winters = False
 
     def set_params(self,
                    batch_size=None,
@@ -39,7 +40,7 @@ class BQHandler(object):
                    locations=None,
                    where=None,
                    order=None,
-                   only_winters=False,
+                   only_winters=None,
                    reason_code_table=None):
         """
         Set params to be used for get_batch function

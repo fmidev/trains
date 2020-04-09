@@ -305,6 +305,7 @@ class IO(Manipulator):
 
         return super().read_parameters(file_to_open, drop)
 
+
     def save_scikit_model(self, model, filename, ext_filename=None):
         """
         Save scikit model into file
@@ -324,13 +325,18 @@ class IO(Manipulator):
             logging.info('Loading file from gs://{}/{}'.format(self.bucket_name, filename))
             client = storage.Client()
             bucket = client.get_bucket(self.bucket_name)
-            tmp = tempfile.NamedTemporaryFile()
             blob = storage.Blob(filename, bucket)
-            blob.download_to_filename(str(tmp))
-        else:
-            tmp = filename
+            if not blob.exists():
+                raise Exception()
 
-        return super().load_scikit_model(tmp)
+            with tempfile.NamedTemporaryFile(dir='/tmp') as tmp:
+                blob.download_to_filename(str(tmp))
+                model = super().load_scikit_model(tmp)
+            os.remove(str(tmp))
+        else:
+            model = super().load_scikit_model(filename)
+
+        return model
 
     def save_keras_model(self, model_filename, history_filename, model, history):
         """
@@ -726,8 +732,10 @@ class IO(Manipulator):
         if len(labels_df) == 0:
             return labels_df
 
-        mask = labels_df.loc[:,train_type_column].isin(train_types)
+        mask = labels_df.loc[:,train_type_column].isin(train_types + ['-99'])
         filt_labels_df = labels_df[(mask)]
+
+        return filt_labels_df
 
         if sum_types:
             d = {}

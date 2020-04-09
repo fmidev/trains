@@ -25,6 +25,7 @@ from lib.modelloader import ModelLoader
 from lib import config as _config
 from lib.predictor import Predictor, PredictionError
 
+
 def main():
     """
     Get data from db and save it as csv
@@ -54,6 +55,7 @@ def main():
     # Init error dicts
     avg_delay = {}
     avg_pred_delay = {}
+    avg_proba = {}
     station_count = 0
     all_times = set()
 
@@ -62,8 +64,12 @@ def main():
     station_r2 = {}
     station_skill = {}
 
+    # For aggregated binary classification metrics
+    time_list, target_list, y_pred_bin_list, y_pred_bin_proba_list = [], [], [], []
+
     # If stations are given as argument use them, else use all stations
     stationList = io.get_train_stations(options.stations_file)
+    all_data = None
 
     if options.stations is not None:
         stations = options.stations.split(',')
@@ -88,6 +94,7 @@ def main():
                            dataset='trains_data',
                            table='features_testset',
                            parameters=all_param_names,
+                           only_winters=options.only_winters,
                            locations=[station])
 
         data = io.filter_train_type(labels_df=data,
@@ -119,6 +126,11 @@ def main():
         data.sort_values(by=['time', 'trainstation'], inplace=True)
         logging.info('Processing {} rows...'.format(len(data)))
 
+        if all_data is None:
+            all_data = data
+        else:
+            all_data.append(data, ignore_index=True)
+
         # Pick times for creating error time series
         times = data.loc[:,'time']
         station_count += 1
@@ -126,6 +138,8 @@ def main():
         # Run prediction
         try:
             target, y_pred = predictor.pred(times, data)
+            # Drop first times which LSTM are not able to predict
+            times = times[(len(data)-len(y_pred)):]
         except PredictionError as e:
             logging.error(e)
             continue
@@ -140,9 +154,13 @@ def main():
                 if t not in avg_delay.keys():
                     avg_delay[t] = [target[i]]
                     avg_pred_delay[t] = [y_pred[i]]
+                    if predictor.y_pred_bin_proba is not None:
+                        avg_proba[t] = [predictor.y_pred_bin_proba[i, 1]]
                 else:
                     avg_delay[t].append(target[i])
                     avg_pred_delay[t].append(y_pred[i])
+                    if predictor.y_pred_bin_proba is not None:
+                        avg_proba[t].append(predictor.y_pred_bin_proba[i, 1])
             except IndexError as e:
                 # LSTM don't have first time steps because it don't
                 # have necessary history
@@ -157,10 +175,24 @@ def main():
             continue
 
         # Calculate errors for given station, first for all periods and then for whole time range
-        splits = viz._split_to_parts(list(times), [target, y_pred], 2592000)
+        if predictor.y_pred_bin is not None:
+            time_list += list(times)
+
+            #feature_list += list()
+            target_list += list(target)
+            y_pred_bin_list += list(predictor.y_pred_bin)
+            y_pred_bin_proba_list += list(predictor.y_pred_bin_proba)
+
+            splits = viz._split_to_parts(list(times), [target, y_pred, predictor.y_pred_bin, predictor.y_pred_bin_proba], 2592000)
+        else:
+            splits = viz._split_to_parts(list(times), [target, y_pred], 2592000)
 
         for i in range(0, len(splits)):
-            times_, target_, y_pred_ = splits[i]
+            if predictor.y_pred_bin is not None:
+                times_, target_, y_pred_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
+                viz.classification_perf_metrics(y_pred_bin_proba_, y_pred_bin_, target_, options, times_, station)
+            else:
+                times_, target_, y_pred_ = splits[i]
 
             rmse = math.sqrt(metrics.mean_squared_error(target_, y_pred_))
             mae = metrics.mean_absolute_error(target_, y_pred_)
@@ -205,7 +237,9 @@ def main():
 
         # Draw visualisation
         fname='{}/timeseries_{}.png'.format(options.vis_path, station)
-        viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname)
+        proba = None
+        if predictor.y_pred_bin_proba is not None: proba = predictor.y_pred_bin_proba[:,1]
+        viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname, all_proba=proba)
 
         fname='{}/scatter_all_stations.png'.format(options.vis_path)
         viz.scatter_predictions(times, target, y_pred, savepath=options.vis_path, filename='scatter_{}'.format(station))
@@ -223,14 +257,16 @@ def main():
 
     # Create timeseries of avg actual delay and predicted delay
     all_times = sorted(list(all_times))
-    # print(avg_pred_delay)
-    #print(avg_pred_delay)
     for t,l in avg_delay.items():
         avg_delay[t] = sum(l)/len(l)
     for t, l in avg_pred_delay.items():
         avg_pred_delay[t] = sum(l)/len(l)
+    for t, l in avg_proba.items():
+        avg_proba[t] = sum(l)/len(l)
+
     avg_delay = list(OrderedDict(sorted(avg_delay.items(), key=lambda t: t[0])).values())
     avg_pred_delay = list(OrderedDict(sorted(avg_pred_delay.items(), key=lambda t: t[0])).values())
+    avg_proba = list(OrderedDict(sorted(avg_proba.items(), key=lambda t: t[0])).values())
 
     # Calculate average over all times and stations, first for all months separately, then for whole time range
     splits = viz._split_to_parts(list(times), [avg_delay, avg_pred_delay], 2592000)
@@ -295,11 +331,41 @@ def main():
     io.write_csv(delay_data, fname, fname)
 
     # visualise
+    if not avg_proba:
+        proba = None
+    else:
+        proba = avg_proba
     fname='{}/timeseries_avg_all_stations.png'.format(options.vis_path)
-    viz.plot_delay(all_times, avg_delay, avg_pred_delay, 'Average delay for all station', fname)
+    viz.plot_delay(all_times, avg_delay, avg_pred_delay, 'Average delay for all station', fname, all_proba=proba)
 
     fname='{}/scatter_all_stations.png'.format(options.vis_path)
     viz.scatter_predictions(all_times, avg_delay, avg_pred_delay, savepath=options.vis_path, filename='scatter_all_stations')
+
+    # Binary classification metrics
+    if predictor.y_pred_bin is not None:
+        all_data.sort_values(by=['time'], inplace=True)
+        times = all_data.loc[:,'time'].values
+        target, y_pred = predictor.pred(times, all_data)
+        # Drop first times which LSTM are not able to predict
+        times = times[(len(all_data)-len(y_pred)):]
+        splits = viz._split_to_parts(list(times), [target, y_pred, predictor.y_pred_bin, predictor.y_pred_bin_proba], 2592000)
+
+
+    #if len(time_list) > 0:
+        # zipped = sorted(zip(time_list))
+        # zipped = sorted(zip(time_list, target_list))
+        # zipped = sorted(zip(time_list, target_list, y_pred_bin_list))
+        # zipped = sorted(zip(time_list, target_list, y_pred_bin_list, y_pred_bin_proba_list))
+        #
+        # print(len(time_list), len(target_list), len(y_pred_bin_list), len(y_pred_bin_proba_list))
+        # zipped = sorted(zip(time_list, target_list, y_pred_bin_list, y_pred_bin_proba_list))
+        # time_list, target_list, y_pred_bin_list, y_pred_bin_proba_list = map(list, zip(*zipped))
+        #splits = viz._split_to_parts(time_list, [target_list, y_pred_bin_list, y_pred_bin_proba_list], 2592000)
+
+        for i in range(0, len(splits)):
+            #times_, target_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
+            times_, target_, y_pred_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
+            viz.classification_perf_metrics(y_pred_bin_proba_, y_pred_bin_, target_, options, times_, 'all')
 
 
 if __name__=='__main__':
