@@ -1,4 +1,4 @@
-import sys, os, argparse, logging, json, itertools
+import sys, os, argparse, logging, json, itertools, copy
 import datetime as dt
 from datetime import timedelta
 from configparser import ConfigParser
@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 
 from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 
 from sklearn.pipeline import Pipeline
 
@@ -21,15 +21,36 @@ from lib import bqhandler, imputer, config
 import lib.transformer as _trans
 from lib.io import IO
 from lib.viz import Viz
+from lib.gpclassifier import GPClassifier
 
+NEG_CLASS = 0
 
-
+class State():
+    SCALER_FITTED = False
 
 class EmptyDataError(Exception):
    """Empty data exception"""
    pass
 
-def perf_metrics(y_pred_proba, y_pred, y_test, start, end, viz, io):
+def report_cv_results(results, filename=None, n_top=3):
+    res = ""
+    for i in range(1, n_top + 1):
+        candidates = np.flatnonzero(results['rank_test_score'] == i)
+        for candidate in candidates:
+            res += "Model with rank: {0}\n".format(i)
+            res += "Mean validation score: {0:.3f} (std: {1:.3f})\n".format(
+                  results['mean_test_score'][candidate],
+                  results['std_test_score'][candidate])
+            res += "Parameters: {0}\n".format(results['params'][candidate])
+            res += "\n"
+
+    if filename is not None:
+        with open(filename, 'w') as f:
+            f.write(res)
+
+    logging.info(res)
+
+def perf_metrics(y_pred_proba, y_pred, y_test, start, end, viz, io, output_path):
     """ Calculate, print, save and plot performance metrics """
 
     acc = accuracy_score(y_test, y_pred)
@@ -41,47 +62,68 @@ def perf_metrics(y_pred_proba, y_pred, y_test, start, end, viz, io):
     logging.info('Precision: {}'.format(precision))
     logging.info('Recall: {}'.format(recall))
     logging.info('F1 score: {}'.format(f1))
-    io.log_class_dist(y_pred, labels=[-1,1])
+    io.log_class_dist(y_pred, labels=[NEG_CLASS,1])
 
     error_data = {'acc': [acc],
                   'precision': [precision],
                   'recall': [recall],
                   'f1': [f1]}
-    fname = '{}/test_validation_errors_{}_{}.csv'.format(options.output_path, start, end)
+    fname = '{}/test_validation_errors_{}_{}.csv'.format(output_path, start, end)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
 
     # Confusion matrices
-    fname = '{}/confusion_matrix_testset_{}_{}.png'.format(options.output_path, start, end)
+    fname = '{}/confusion_matrix_testset_{}_{}.png'.format(output_path, start, end)
     viz.plot_confusion_matrix(y_test, y_pred, np.arange(2), filename=fname)
 
-    fname = '{}/confusion_matrix_testset_{}_{}_normalised.png'.format(options.output_path, start, end)
+    fname = '{}/confusion_matrix_testset_{}_{}_normalised.png'.format(output_path, start, end)
     viz.plot_confusion_matrix(y_test, y_pred, np.arange(2), True, filename=fname)
 
     # Precision-recall curve
-    fname = '{}/precision-recall-curve_testset_{}_{}.png'.format(options.output_path, start, end)
+    fname = '{}/precision-recall-curve_testset_{}_{}.png'.format(output_path, start, end)
     viz.prec_rec_curve(y_test, y_pred_proba, filename=fname)
 
     # ROC
-    fname = '{}/roc_testset_{}_{}.png'.format(options.output_path, start, end)
+    fname = '{}/roc_testset_{}_{}.png'.format(output_path, start, end)
     viz.plot_binary_roc(y_test, y_pred_proba, filename=fname)
 
 
-def predict_timerange(test_data, feature_params, model, xscaler, start, end):
-    """ Do prediction for given time range in data."""
-    X = test_data.loc[start:end, feature_params].astype(np.float32).values
+def predict_timerange(test_data, feature_params, models, scalers, start, end):
+    """
+    Do prediction for given time range in data.
+
+    So far only classifier implemented
+
+    test_data      : DataFrame
+                     Data containing X and y
+    feature_params : tuple
+                     (classifier_feature_params, regressor_feature_params)
+    models         : tuple
+                     (classifier, regressor)
+    scalers        : tuple
+                     (classifier_xscaler, regressor_scaler, regressor_yscaler)
+    start          : DateTime
+                     period start time
+    end            : DateTime
+                     period end time
+
+    Return y_pred_proba, y_pred, y
+    """
+    X = test_data.loc[start:end, feature_params[0]].astype(np.float32).values
     y = test_data.loc[start:end, 'class'].astype(np.int32).values.ravel()
 
     if X.shape[0] < 1:
         raise EmptyDataError
 
     if options.normalize:
-        X = xscaler.transform(X)
+        X = scalers[0].transform(X)
 
     logging.info('Predicting for time range {} - {}...'.format(start, end))
-    y_pred_proba = model.predict_proba(X)
-    y_pred = np.argmax(y_pred_proba, axis=1)
-    # We want [-1,1] classes as y values are
-    y_pred[y_pred == 0] = -1
+    y_pred = models[0].predict(X, type='int')
+    y_pred_proba = models[0].y_pred_proba
+    #y_pred = np.argmax(y_pred_proba, axis=1)
+
+    # Ensure that classes are correct
+    y_pred[y_pred == 0] = NEG_CLASS
     logging.info('...done')
 
     return y_pred_proba, y_pred, y
@@ -90,38 +132,57 @@ def predict_timerange(test_data, feature_params, model, xscaler, start, end):
 
 
 
-def main():
+def main(location=None):
     """
-    Get data from db and save it as csv
+    ...
     """
-    # Helpers
-    bq = bqhandler.BQHandler()
-    io = IO(gs_bucket=options.gs_bucket)
-    viz = Viz(io)
+    if location is None:
+        locations = None
+        location = 'all'
+    else:
+        locations = [location]
 
-    # Configuration
-    starttime, endtime = io.get_dates(options)
-    logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
-                                                                  starttime.strftime('%Y-%m-%d'),
-                                                                  endtime.strftime('%Y-%m-%d')))
+    logging.info('Processing {}...'.format(location))
+    output_path = options.output_path+'/{}'.format(location)
+    save_path = options.save_path+'/{}'.format(location)
 
-    all_param_names = options.label_params + options.feature_params + options.meta_params
-    aggs = io.get_aggs_from_param_names(options.feature_params)
+    if not os.path.exists(output_path): os.makedirs(output_path)
+    if not os.path.exists(save_path): os.makedirs(save_path)
+
+    all_param_names = list(set(options.label_params + options.feature_params + options.meta_params + options.classifier_feature_params + options.regressor_feature_params))
+
+    # Param list is modified after retrieving data
+    classifier_feature_params = copy.deepcopy(options.classifier_feature_params)
+    regressor_feature_params = copy.deepcopy(options.regressor_feature_params)
+
+    all_feature_params = list(set(options.feature_params + options.meta_params + options.classifier_feature_params + options.regressor_feature_params))
+    aggs = io.get_aggs_from_param_names(all_feature_params)
 
     # Initialise classifier
-    if hasattr(options, 'classifier_file'):
-        classifier = io.load_scikit_model(options.classifier_file)
+    if hasattr(options, 'classifier_model_file'):
+        fname = options.classifier_model_file.replace('{location}', location)
+        classifier = io.load_scikit_model(fname)
     else:
         if options.classifier == 'svc':
             params = {'kernel': options.kernel, 'gamma': options.gamma, 'C': options.penalty, 'probability': options.probability}
             classifier = SVC(**params)
         elif options.classifier == 'rfc':
             classifier = RandomForestClassifier(n_jobs=-1)
+        elif options.classifier == 'gp':
+            classifier = GPClassifier(noise_level=options.noise_level)
         else:
-            raise('Model not specificied or wrong. Add "classifier: bgm" to config file.')
+            raise('Model not specificied or wrong. Add "classifier: gp" to config file.')
 
     # Initialise regression model
-    if options.regression == 'rfr':
+    if hasattr(options, 'regressor_file'):
+        fname = options.regressor_file.replace('{location}', location)
+        regressor = io.load_scikit_model(fname)
+        regressor.fitted = True
+    elif hasattr(options, 'regressor_model_file'):
+        fname = options.regressor_model_file.replace('{location}', location)
+        model = io.load_scikit_model(fname)
+        regressor = _trans.Regressor(model=model, fitted=True)
+    elif options.regression == 'rfr':
         model = RandomForestRegressor(n_estimators=options.n_estimators,
                                       n_jobs=-1,
                                       min_samples_leaf=options.min_samples_leaf,
@@ -135,13 +196,14 @@ def main():
         raise('Model not specificied or wrong. Add "classifier: bgm" to config file.')
 
     # Initialise transformer
-    transformer = _trans.Selector(classifier=classifier)
+    transformer = _trans.Selector(classifier=classifier, regressor=regressor)
+    regressor.set_classifier(transformer)
 
     # Initialise pipeline
-    pipe = Pipeline(
-        [('selector', transformer),
-         ('regression', regressor)]
-    )
+    # pipe = Pipeline(
+    #     [('selector', transformer),
+    #      ('regression', regressor)]
+    # )
 
     sum_columns = ['delay']
     if options.reason_code_table is not None:
@@ -158,7 +220,10 @@ def main():
                   dataset=options.feature_dataset,
                   table=options.feature_table,
                   parameters=all_param_names,
+                  locations=locations,
                   reason_code_table=options.reason_code_table,
+                  reason_codes_exclude=options.reason_codes_exclude,
+                  reason_codes_include=options.reason_codes_include,
                   where=where)
 
     data = bq.get_rows(starttime,
@@ -183,7 +248,7 @@ def main():
 
     # Binary class
     logging.info('Adding binary class to the dataset with limit {}...'.format(options.delay_limit))
-    data['class'] = data['delay'].map(lambda x: 1 if x > options.delay_limit else -1)
+    data['class'] = data['delay'].map(lambda x: 1 if x > options.delay_limit else NEG_CLASS)
 
     # Separate train and validation sets
     data_train, data_test = train_test_split(data, test_size=0.3)
@@ -194,27 +259,36 @@ def main():
         count = data_train.groupby('class').size().min()
         # SVC can't handle more than 50 000 samples
         if options.classifier == 'svc': count = min(count, 50000)
-        data_train = pd.concat([data_train.loc[data_train['class'] == -1].sample(n=count),
+
+        count2 = int(min((options.balance_ratio*count), data_train.loc[(data_train['class'] == 0)].shape[0]))
+
+        data_train = pd.concat([data_train.loc[data_train['class'] == NEG_CLASS].sample(n=count2),
         data_train.loc[data_train['class'] == 1].sample(n=count)])
 
     logging.info('Train data:')
-    io.log_class_dist(data_train.loc[:, 'class'].values, labels=[-1,1])
+    io.log_class_dist(data_train.loc[:, 'class'].values, labels=[NEG_CLASS,1])
     logging.info('Test data:')
-    io.log_class_dist(data_test.loc[:, 'class'].values, labels=[-1,1])
+    io.log_class_dist(data_test.loc[:, 'class'].values, labels=[NEG_CLASS,1])
 
     # Adding month
     if options.month:
         logging.info('Adding month to the datasets...')
-        data_train['month'] = data_train.loc[:,'time'].map(lambda x: x.month)
-        data_test['month'] = data_test.loc[:,'time'].map(lambda x: x.month)
-        options.feature_params.append('month')
+        data_train = data_train.assign(month=lambda df: df.loc[:, 'time'].map(lambda x: x.month))
+        data_test = data_test.assign(month=lambda df: df.loc[:, 'time'].map(lambda x: x.month))
+        regressor_feature_params.append('month')
+        classifier_feature_params.append('month')
+        #options.feature_params.append('month')
+
 
     data_train.set_index('time', inplace=True)
 
     y_train = data_train.loc[:,['delay', 'class']].astype(np.int32).values
     y_test = data_test.loc[:,['delay', 'class']].astype(np.int32).values
-    X_train = data_train.loc[:,options.feature_params].astype(np.float32).values
-    X_test = data_test.loc[:,options.feature_params].astype(np.float32).values
+    X_train_classifier = data_train.loc[:,classifier_feature_params].copy().astype(np.float32).values
+    X_test_classifier = data_test.loc[:,classifier_feature_params].copy().astype(np.float32).values
+    X_train_regressor = data_train.loc[:,regressor_feature_params].copy().astype(np.float32).values
+    X_test_regressor = data_test.loc[:,regressor_feature_params].copy().astype(np.float32).values
+
 
     # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
     # io.log_class_dist(y_train[:,1], [-1,1])
@@ -223,56 +297,136 @@ def main():
     if options.save_data:
         tname = options.model+'_'+options.feature_dataset+'_'+options.config_name+'_train'
         bq.nparray_to_table([X_train, y_train],
-                            [options.feature_params, ['delay', 'class']],
+                            [classifier_feature_params + regressor_feature_params, ['delay', 'class']],
                             options.project,
                             options.feature_dataset,
                             tname
                             )
         tname = options.model+'_'+options.feature_dataset+'_'+options.config_name+'_test'
         bq.nparray_to_table([X_test, y_test],
-                            [options.feature_params, ['delay', 'class']],
+                            [classifier_feature_params + regressor_feature_params, ['delay', 'class']],
                             options.project,
                             options.feature_dataset,
                             tname
                             )
 
+
+    ############################################################################
+    # NORMALIZE
+    ############################################################################
     if options.normalize:
-        logging.info('Normalizing data...')
-        if hasattr(options, 'xscaler_file'):
-            scaler = io.load_scikit_model(options.xscaler_file)
-            X_train = scaler.transform(X_train)
-            X_test = scaler.transform(X_test)
+        logging.info('Normalizing classifier data...')
+        if state.SCALER_FITTED:
+            X_train_classifier = state.xscaler_classifier.transform(X_train_classifier)
+        elif hasattr(options, 'xscaler_file_classifier'):
+            state.xscaler_classifier = io.load_scikit_model(options.xscaler_file_classifier)
+            X_train_classifier = state.xscaler_classifier.transform(X_train_classifier)
         else:
-            scaler = StandardScaler()
-            X_train = scaler.fit_transform(X_train)
-            X_test = scaler.transform(X_test)
+            xscaler_classifier = StandardScaler()
+            X_train_classifier = xscaler_classifier.fit_transform(X_train_classifier)
+            # Save classifier
+            fname=options.save_path+'/xscaler_classifier.pkl'
+            io.save_scikit_model(xscaler_classifier, filename=fname, ext_filename=fname)
+            state.xscaler_classifier = xscaler_classifier
 
+        X_test_classifier = state.xscaler_classifier.transform(X_test_classifier)
+
+        logging.info('Normalizing regression data...')
+        if state.SCALER_FITTED:
+            X_train_regressor = state.xscaler_regressor.transform(X_train_regressor)
+        elif hasattr(options, 'xscaler_file_regressor'):
+            state.xscaler_regressor = io.load_scikit_model(options.xscaler_file_regressor)
+            X_train_regressor = state.xscaler_regressor.transform(X_train_regressor)
+        else:
+            xscaler_regressor = StandardScaler()
+            X_train_regressor = xscaler_regressor.fit_transform(X_train_regressor)
+            # Save
+            fname=options.save_path+'/xscaler_regressor.pkl'
+            io.save_scikit_model(xscaler_regressor, filename=fname, ext_filename=fname)
+            state.xscaler_regressor = xscaler_regressor
+
+        X_test_regressor = state.xscaler_regressor.transform(X_test_regressor)
+
+        if state.SCALER_FITTED:
+            y_train[:, 0] = state.yscaler_regressor.transform(y_train[:, 0].reshape(-1, 1)).ravel()
+        elif hasattr(options, 'yscaler_file_regressor'):
+            state.yscaler_regressor = io.load_scikit_model(options.yscaler_file_regressor)
+            y_train[:, 0] = state.yscaler_regressor.transform(y_train[:, 0].reshape(-1, 1)).ravel()
+        else:
+            yscaler_regressor = StandardScaler()
+            #print(y_train[:,0].reshape(-1,1).shape)
+            y_train[:, 0] = yscaler_regressor.fit_transform(y_train[:,0].reshape(-1,1)).ravel()
+            fname=options.save_path+'/yscaler_regressor.pkl'
+            io.save_scikit_model(yscaler_regressor, filename=fname, ext_filename=fname)
+            state.yscaler_regressor = yscaler_regressor
+
+        state.SCALER_FITTED = True
+
+    ############################################################################
+    # TRAINING
+    ############################################################################
     if options.cv:
-        logging.info('Doing random search for hyper parameters...')
-        raise("No param_grid set for given model ({})".format(options.regression))
+        # Only RFC implemented
+        logging.info('Doing random search for hyper parameters for classifier...')
 
-        random_search = RandomizedSearchCV(model,
+        if options.classifier == 'rfc':
+            param_grid = {"n_estimators": [10, 50, 100],
+                          "max_depth": [3, 20, None],
+                          "max_features": ["auto", "sqrt", "log2", None],
+                          "min_samples_split": [2,5,10],
+                          "min_samples_leaf": [1, 2, 4, 10],
+                          "bootstrap": [True, False]}
+        else:
+            raise("No param_grid set for given model ({})".format(options.regression))
+
+        random_search = RandomizedSearchCV(classifier,
                                            param_distributions=param_grid,
                                            n_iter=int(options.n_iter_search),
                                            n_jobs=-1)
 
-        random_search.fit(X_train, y_train)
+        random_search.fit(X_train_classifier, y_train[:,1])
         logging.info("RandomizedSearchCV done.")
-        fname = options.output_path+'/random_search_cv_results.txt'
+        fname = options.output_path+'/random_search_cv_classifier_results.txt'.format(location)
         report_cv_results(random_search.cv_results_, fname)
         io._upload_to_bucket(filename=fname, ext_filename=fname)
         sys.exit()
     else:
-        logging.info('Training...')
-        transformer.set_y(y_train[:,0])
-        regressor.set_classifier(transformer)
-        pipe.fit(X_train, y_train[:,1])
+        # Training
+        if not hasattr(options, 'classifier_file'): # TODO do we have fitted argument?
+            logging.info('Training classifier...')
+            classifier.fit(X_train_classifier, y_train[:,1])
+            # Save classifier
+            fname = save_path+'/classifier.pkl'
+            io.save_scikit_model(classifier, filename=fname, ext_filename=fname)
+
+        if not regressor.fitted:
+            logging.info('Training regressor...')
+            regressor.fit(X_train_regressor, y_train[:,0])
+            # Save classifier
+            fname = save_path+'/regressor.pkl'
+            io.save_scikit_model(regressor, filename=fname, ext_filename=fname)
+
+        # Pipe approach, only class 1 samples used in regressor training
+        #transformer.set_y(y_train[:,0])
+        #pipe.fit(X_train, y_train[:,1])
+        # Save pipe
+        # io.save_scikit_model(pipe.steps[1][1], filename=fname, ext_filename=fname)
+        # io.save_scikit_model(pipe, filename=options.save_file, ext_filename=options.save_file)
+
+
+
+
+
+    ############################################################################
+    # EVALUATE WITH VALIDATION DATASET
+    ############################################################################
 
     # Metrics
-    y_pred_proba = pipe.steps[0][1].predict_proba(X_test)
-    y_pred = pipe.steps[0][1].predict(X_test, type='int')
+    y_pred = classifier.predict(X_test_classifier, type='int')
+    y_pred_proba = classifier.y_pred_proba
 
-    io.save_scikit_model(pipe, filename=options.save_file, ext_filename=options.save_file)
+    # y_pred_proba = pipe.steps[0][1].predict_proba(X_test)
+    # y_pred = pipe.steps[0][1].predict(X_test, type='int')
 
     # Classification performance
     y_test_class = y_test[:,1]
@@ -286,37 +440,36 @@ def main():
     logging.info('Classification precision: {}'.format(precision))
     logging.info('Classification recall: {}'.format(recall))
     logging.info('Classification F1 score: {}'.format(f1))
-    io.log_class_dist(y_pred, [-1, 1])
+    io.log_class_dist(y_pred, [NEG_CLASS, 1])
 
     # Confusion matrices
-    fname = '{}/confusion_matrix_validation.png'.format(options.output_path)
+    fname = '{}/confusion_matrix_validation.png'.format(output_path)
     viz.plot_confusion_matrix(y_test_class, y_pred, np.arange(2), filename=fname)
 
-    fname = '{}/confusion_matrix_validation_normalised.png'.format(options.output_path)
+    fname = '{}/confusion_matrix_validation_normalised.png'.format(output_path)
     viz.plot_confusion_matrix(y_test_class, y_pred, np.arange(2), True, filename=fname)
 
     # Precision-recall curve
-    fname = '{}/precision-recall-curve.png'.format(options.output_path)
+    fname = '{}/precision-recall-curve.png'.format(output_path)
     viz.prec_rec_curve(y_test_class, y_pred_proba, filename=fname)
 
     # ROC
-    fname = '{}/roc.png'.format(options.output_path)
+    fname = '{}/roc.png'.format(output_path)
     viz.plot_binary_roc(y_test_class, y_pred_proba, filename=fname)
 
 
-    if options.normalize:
-        fname=options.save_path+'/xscaler.pkl'
-        io.save_scikit_model(scaler, filename=fname, ext_filename=fname)
-
-    if options.regression == 'rfr':
-        fname = options.output_path+'/rfc_feature_importance.png'
-        viz.rfc_feature_importance(pipe.steps[1][1].get_feature_importances(), fname, feature_names=options.feature_params)
+    # if options.regression == 'rfr':
+    #     fname = output_path+'/rfr_feature_importance.png'
+    #     viz.rfc_feature_importance(regressor.get_feature_importances(), fname, feature_names=regressor_feature_params)
+    #     #viz.rfc_feature_importance(pipe.steps[1][1].get_feature_importances(), fname, feature_names=options.feature_params)
 
     # Regression performance
     #y_pred = pipe.steps[1][1].predict(X_test)
     y_test_reg = y_test[:,0]
-    pipe.set_params(selector__full=True)
-    y_pred = pipe.predict(X_test, full=True)
+
+    #pipe.set_params(selector__full=True)
+    #y_pred = pipe.predict(X_test, full=True)
+    y_pred = regressor.predict(X_test_regressor, X_test_classifier)
 
     rmse = np.sqrt(mean_squared_error(y_test_reg, y_pred))
     mae = mean_absolute_error(y_test_reg, y_pred)
@@ -333,7 +486,7 @@ def main():
                   'rmse': [rmse],
                   'mae': [mae],
                   'r2': [r2]}
-    fname = '{}/training_time_classification_validation_errors.csv'.format(options.output_path)
+    fname = '{}/training_time_classification_validation_errors.csv'.format(output_path)
     io.write_csv(error_data, filename=fname, ext_filename=fname)
 
 
@@ -342,16 +495,19 @@ def main():
 
 
     ############################################################################
-    # EVALUATE
+    # EVALUATE WITH TESTSET
     ############################################################################
     if options.evaluate:
         logging.info('Loading test data...')
-        test_data = bq.get_rows(dt.datetime.strptime('2010-01-01', "%Y-%m-%d"),
-                                dt.datetime.strptime('2019-01-01', "%Y-%m-%d"),
+        s = dt.datetime.strptime('2010-01-01', "%Y-%m-%d")
+        e = dt.datetime.strptime('2019-01-31', "%Y-%m-%d")
+        test_data = bq.get_rows(s,
+                                e,
                                 loc_col='trainstation',
                                 project=options.project,
                                 dataset=options.feature_dataset,
                                 table=options.test_table,
+                                locations=locations,
                                 parameters=all_param_names)
 
         test_data = io.filter_train_type(labels_df=test_data,
@@ -371,20 +527,35 @@ def main():
         logging.info('Adding binary class to the test dataset with limit {}...'.format(options.delay_limit))
         #logging.info('Adding binary class to the dataset with limit {}...'.format(limit))
         #data['class'] = data['count'].map(lambda x: 1 if x > options.delay_count_limit else -1)
-        test_data['class'] = test_data['delay'].map(lambda x: 1 if x > options.delay_limit else -1)
-        io.log_class_dist(test_data.loc[:, 'class'].values, labels=[-1,1])
+        test_data['class'] = test_data['delay'].map(lambda x: 1 if x > options.delay_limit else NEG_CLASS)
+        io.log_class_dist(test_data.loc[:, 'class'].values, labels=[NEG_CLASS,1])
 
         if options.month:
             logging.info('Adding month to the test dataset...')
+            test_data = test_data.assign(month=lambda df: df.index.map(lambda x: x.month))
             test_data['month'] = test_data.index.map(lambda x: x.month)
 
-        times = [('2014-01-01', '2014-02-01'), ('2016-06-01', '2016-07-01'), ('2017-02-01', '2017-03-01'), ('2011-02-01', '2017-03-01')]
+        #times = [('2014-01-01', '2014-02-01'), ('2016-06-01', '2016-07-01'), ('2017-02-01', '2017-03-01'), ('2011-02-01', '2017-03-01')]
+        #times = [('2011-01-01', '2011-03-01'), ('2016-06-01', '2016-07-01'), ('2017-02-01', '2017-03-01'), ('2011-02-01', '2017-03-01')]
+        #times = [('2010-01-01', '2010-01-31')]
+        if options.test_times is not None:
+            times = options.test_times
+        else:
+            times = [('2011-01-01', '2011-03-01'), ('2016-06-01', '2016-07-01'), ('2017-02-01', '2017-03-01')]
+
         for start, end in times:
             try:
-                y_pred_proba, y_pred, y = predict_timerange(test_data, options.feature_params, pipe.steps[0][1], scaler, start, end)
-                perf_metrics(y_pred_proba, y_pred, y, start, end, viz, io)
+                y_pred_proba, y_pred, y = predict_timerange(test_data,
+                                                            (classifier_feature_params, regressor_feature_params),
+                                                            (classifier, regressor),
+                                                            (state.xscaler_classifier, state.xscaler_regressor, state.yscaler_regressor),
+                                                            start,
+                                                            end)
+                perf_metrics(y_pred_proba, y_pred, y, start, end, viz, io, output_path)
             except EmptyDataError:
                 logging.info('No data for {} - {}'.format(start, end))
+
+    logging.info('done\n--------------------------------------------------------')
 
 
 if __name__=='__main__':
@@ -413,4 +584,19 @@ if __name__=='__main__':
 
     logging.info('Using configuration: {} | {}'.format(options.config_filename, options.config_name))
 
-    main()
+    # Helpers
+    bq = bqhandler.BQHandler()
+    io = IO(gs_bucket=options.gs_bucket)
+    viz = Viz(io)
+    state = State()
+
+    starttime, endtime = io.get_dates(options)
+    logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
+                                                                  starttime.strftime('%Y-%m-%d'),
+                                                                  endtime.strftime('%Y-%m-%d')))
+
+    if options.locations is None:
+        main()
+    else:
+        for location in options.locations:
+            main(location)

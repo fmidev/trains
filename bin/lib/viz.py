@@ -9,8 +9,8 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 import matplotlib.ticker as ticker
-from keras.utils import plot_model
-from keras import activations
+#from keras.utils import plot_model
+#from keras import activations
 from sklearn.metrics import confusion_matrix
 from sklearn import metrics
 from sklearn.preprocessing import label_binarize
@@ -22,7 +22,7 @@ from datetime import datetime as dt
 import matplotlib.dates as mdates
 from matplotlib.dates import MO, TU, WE, TH, FR, SA, SU
 from math import ceil
-
+import pandas as pd
 from pandas.plotting import register_matplotlib_converters
 register_matplotlib_converters()
 
@@ -976,7 +976,7 @@ class Viz:
         self._save(plt, filename)
 
     def scatter_predictions(self, times, y, y_pred,
-                           y_label='Delay [minutes]',
+                           y_label='True delay [minutes]',
                            x_label='Predicted delay [minutes]',
                            heading='True and predicted delay',
                            savepath='.',
@@ -1003,8 +1003,8 @@ class Viz:
         self.scatter_prediction(y, y_pred, y_label, x_label, heading, fname)
 
     def scatter_prediction(self,  y, y_pred,
-                           y_label='True delay [minutes]',
-                           x_label='Predicted delay [minutes]',
+                           x_label='True delay [minutes]',
+                           y_label='Predicted delay [minutes]',
                            heading='',
                            filename='scatter.png'):
         """
@@ -1034,23 +1034,26 @@ class Viz:
         self._save(plt, filename)
 
 
-    def classification_perf_metrics(self, y_pred_proba, y_pred, y_test, options, times, station):
+    def classification_perf_metrics(self, y_pred_proba, y_pred, y_test, options, times, station, neg_class=0):
         """
         Calculate, print, save and plot performance metrics
 
         Highly customized for viz_performance.py
         """
 
-        try:
-            start = times[0].strftime('%Y-%m-%d')
-            end = times[-1].strftime('%Y-%m-%d')
-        except AttributeError:
-            # times are already datetime objects
-            start = times[0]
-            end = times[-1]
+        #try:
+        start = pd.to_datetime(str(times[0])).strftime('%Y-%m-%d')
+        end = pd.to_datetime(str(times[-1])).strftime('%Y-%m-%d')
+        # except AttributeError:
+        #     # times are already datetime objects
+        #     start = times[0]
+        #     end = times[-1]
+        #
+        # starts = start.strftime('%Y-%m-%d')
+        # ends = end.strftime('%Y-%m-%d')s
 
-        y_test =  np.fromiter(map(lambda x: 1 if x > options.delay_limit else -1, y_test), dtype=np.int32)
-        y_pred =  np.fromiter(map(lambda x: 1 if x else -1, y_pred), dtype=np.int32)
+        y_test =  np.fromiter(map(lambda x: 1 if x > options.delay_limit else neg_class, y_test), dtype=np.int32)
+        y_pred =  np.fromiter(map(lambda x: 1 if x else neg_class, y_pred), dtype=np.int32)
         #print(y_pred)
         #y_pred = list(map(int, y_pred))
         y_pred_proba = np.array(y_pred_proba).reshape(-1, 2)

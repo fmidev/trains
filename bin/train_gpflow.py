@@ -3,8 +3,6 @@ import argparse
 import logging
 import datetime as dt
 from datetime import timedelta
-# import json
-# import itertools
 import numpy as np
 from configparser import ConfigParser
 import gpflow

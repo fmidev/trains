@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-import sys, re, tempfile, subprocess, os
+import sys, re, tempfile, subprocess, os, joblib
 import numpy as np
 from os import listdir
 from os.path import isfile, join
 
 from google.cloud import storage
 
-from sklearn.externals import joblib
-from keras.models import Model, model_from_yaml
-import tensorflow as tf
+#from sklearn.externals import joblib
+#from keras.models import Model, model_from_yaml
+#import tensorflow as tf
 
 import googleapiclient.discovery
 
@@ -117,32 +117,26 @@ class IO(Manipulator):
     #
     # GENERAL
     #
-
-    def report_cv_results(self, results, scores=['score'], filename=None, ext_filename=None, n_top=5):
+    def report_cv_results(self, results, filename=None, ext_filename=None, n_top=5):
         res = ""
-        for score in scores:
-
-            res += "{}\n".format(score)
-            res += "-------------------------------\n"
-            for i in range(1, n_top + 1):
-                candidates = np.flatnonzero(results['rank_test_{}'.format(score)] == i)
-                for candidate in candidates:
-                    res += "Model with rank: {0}\n".format(i)
-                    res += "Mean validation {0}: {1:.3f} (std: {2:.3f})\n".format(
-                        score,
-                        results['mean_test_{}'.format(score)][candidate],
-                        results['std_test_{}'.format(score)][candidate])
-                    res += "Parameters: {0}\n".format(results['params'][candidate])
-                    res += "\n"
+        for i in range(1, n_top + 1):
+            candidates = np.flatnonzero(results['rank_test_score'] == i)
+            for candidate in candidates:
+                res += "Model with rank: {0}\n".format(i)
+                res += "Mean validation score: {0:.3f} (std: {1:.3f})\n".format(
+                      results['mean_test_score'][candidate],
+                      results['std_test_score'][candidate])
+                res += "Parameters: {0}\n".format(results['params'][candidate])
+                res += "\n"
 
         if filename is not None:
             with open(filename, 'w') as f:
                 f.write(res)
-
             if ext_filename is not None:
                 self._upload_to_bucket(filename, ext_filename)
 
         logging.info(res)
+
 
     def log_class_dist(self, data, labels=None):
         """

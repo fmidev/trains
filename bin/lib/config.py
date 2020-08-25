@@ -49,7 +49,22 @@ def read(options):
             if getattr(options, param[0], None) is None:
                 setattr(options, param[0], param[1])
 
-        options.feature_params = options.feature_params.split(',')
+        options.feature_params = getattr(options, 'feature_params', None)
+        if options.feature_params is not None:
+            options.feature_params = options.feature_params.split(',')
+        else:
+            options.feature_params = []
+        options.classifier_feature_params = getattr(options, 'classifier_feature_params', None)
+        if options.classifier_feature_params is not None:
+            options.classifier_feature_params = options.classifier_feature_params.split(',')
+        else:
+            options.classifier_feature_params = []
+        options.regressor_feature_params = getattr(options, 'regressor_feature_params', None)
+        if options.regressor_feature_params is not None:
+            options.regressor_feature_params = options.regressor_feature_params.split(',')
+        else:
+            options.regressor_feature_params = []
+
         options.label_params = options.label_params.split(',')
         options.meta_params = options.meta_params.split(',')
 
@@ -61,6 +76,14 @@ def read(options):
             options.gmm_params = options.gmm_params.split(',')
         except:
             pass
+
+        try:
+            periods = options.test_times.split('|')
+            options.test_times = []
+            for p in periods:
+                options.test_times.append(p.split(','))
+        except:
+            options.test_times = None
 
         try:
             options.train_types = options.train_types.split(',')
@@ -117,8 +140,12 @@ def read(options):
         _bval('save_data')
         _intval('pick_month')
         _intval('filter_delay_limit')
-        _fval('class_limit', .1)
+        _fval('class_limit', .5)
         _bval('smote')
+        _fval('balance_ratio', 1)
+
+        # GP
+        _fval('noise_level', 5)
 
         try:
             if options.label_column is None:
@@ -128,6 +155,16 @@ def read(options):
 
         if not hasattr(options, 'reason_code_table'):
             options.reason_code_table = None
+
+        if hasattr(options, 'reason_codes_exclude'):
+            options.reason_codes_exclude = options.reason_codes_exclude.split(',')
+        else:
+            options.reason_codes_exclude = None
+
+        if hasattr(options, 'reason_codes_include'):
+            options.reason_codes_include = options.reason_codes_include.split(',')
+        else:
+            options.reason_codes_include = None
 
         # linear regression
         _fval('alpha')

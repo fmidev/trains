@@ -1,15 +1,15 @@
 import sys, os, argparse, logging, json
 
-import tensorflow as tf
-from tensorflow.python.estimator.export import export
-from tensorflow.python.framework import constant_op
-#from tensorflow.contrib import predictor
-
-from tensorflow.keras.models import load_model
+# import tensorflow as tf
+# from tensorflow.python.estimator.export import export
+# from tensorflow.python.framework import constant_op
+# #from tensorflow.contrib import predictor
+#
+# from tensorflow.keras.models import load_model
 
 from sklearn import metrics
 
-from lib.convlstm import LSTMClassifier, F1, Recall, Precision, Positives, Negatives
+# from lib.convlstm import LSTMClassifier, F1, Recall, Precision, Positives, Negatives
 
 class ModelLoader():
 
@@ -99,7 +99,7 @@ class ModelLoader():
         if not self.model_loaded or force:
             logging.info('Loading model from {}/{}'.format(save_path, save_file))
             #self.io._download_from_bucket(save_file, save_file)
-            self.predictor = self.io.load_scikit_model(save_file)
+            self.predictor = self.io.load_scikit_model(save_path+'/'+save_file)
             self.model_loaded = True
 
         return self.predictor

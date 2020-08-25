@@ -1,4 +1,4 @@
-FROM tervo/trains:cpu
+FROM tervo/trains:gpu
 
 ADD bin /a/bin
 ADD cnf /a/cnf
@@ -6,5 +6,6 @@ ADD cnf /a/cnf
 RUN chmod 777 /a
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
+ENV MPLCONFIGDIR=/tmp
 
-CMD python -u  bin/viz_performance.py --config_filename cnf/dual.ini --config_name svc-rfr-winters-class-limit-02
+CMD python -u  bin/viz_performance.py --config_filename cnf/dual.ini --config_name gaussianprocesses-rfr-pasila-1

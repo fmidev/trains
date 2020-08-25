@@ -29,6 +29,8 @@ class BQHandler(object):
         self.reason_code_table = None
         self.where = None
         self.only_winters = False
+        self.reason_codes_exclude = None
+        self.reason_codes_include = None
 
     def set_params(self,
                    batch_size=None,
@@ -41,7 +43,9 @@ class BQHandler(object):
                    where=None,
                    order=None,
                    only_winters=None,
-                   reason_code_table=None):
+                   reason_code_table=None,
+                   reason_codes_exclude=None,
+                   reason_codes_include=None):
         """
         Set params to be used for get_batch function
         """
@@ -79,6 +83,8 @@ class BQHandler(object):
 
         if reason_code_table is not None:
             self.reason_code_table = reason_code_table
+            self.reason_codes_exclude = reason_codes_exclude
+            self.reason_codes_include = reason_codes_include
 
         self.batch_num = 0
 
@@ -284,8 +290,12 @@ class BQHandler(object):
             endtime=self.endtime.strftime(timeformat)
             )
 
-        if self.reason_code_table is not None:
-            sql += ' AND b.code NOT IN ("T1","P2","R1","R3","V4","K6")'
+        if self.reason_codes_exclude is not None:
+            sql += ' AND (b.code IS NULL OR b.code NOT IN ("{}"))'.format('","'.join(self.reason_codes_exclude))
+        elif self.reason_codes_include is not None:
+            sql += ' AND (b.code IN ("{}"))'.format('","'.join(self.reason_codes_include))
+        elif self.reason_code_table is not None:
+            raise Exception('If reason_code_table is set reason_codes_exclude or reason_codes_include has to be also set.')
 
         if self.locations is not None:
             sql += ' AND a.{loc_col} in ({locations})'.format(loc_col=self.loc_col,

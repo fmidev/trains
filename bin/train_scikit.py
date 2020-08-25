@@ -12,7 +12,6 @@ import pandas as pd
 
 from sklearn.decomposition import IncrementalPCA
 from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import Imputer
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import train_test_split
@@ -36,7 +35,6 @@ from sklearn.metrics import r2_score
 from lib.io import IO
 from lib.viz import Viz
 from lib.bqhandler import BQHandler
-from lib import imputer
 from lib import config as _config
 
 def main():
@@ -47,6 +45,10 @@ def main():
     bq = BQHandler()
     io = IO(gs_bucket=options.gs_bucket)
     viz = Viz(io=io)
+
+    location = 'all'
+    if options.locations is not None:
+        location = options.locations[0]
 
     starttime, endtime = io.get_dates(options)
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
@@ -135,6 +137,7 @@ def main():
                                project=options.project,
                                dataset=options.feature_dataset,
                                table=options.feature_table,
+                               locations=options.locations,
                                parameters=all_param_names,
                                only_winters=options.only_winters)
             data = io.filter_train_type(labels_df=data,
@@ -157,12 +160,6 @@ def main():
                 data = io.calc_delay_avg(data)
 
             data.sort_values(by=['time', 'trainstation'], inplace=True)
-
-            if options.impute:
-                logging.info('Imputing missing values...')
-                data.drop(columns=['train_type'], inplace=True)
-                data = imputer.fit_transform(data)
-                data.loc[:, 'train_type'] = None
 
             if options.month:
                 logging.info('Adding month to the dataset...')
@@ -204,10 +201,8 @@ def main():
 
             if len(options.label_params) == 1:
                 y_train = yscaler.fit_transform(y_train.reshape(-1, 1)).ravel()
-                #y_test = yscaler.transform(y_test.reshape(-1, 1)).ravel()
             else:
                 y_train = yscaler.fit_transform(y_train)
-                #y_test = yscaler.transform(y_test)
 
         if options.pca:
             logging.info('Doing PCA analyzis for the data...')
@@ -231,7 +226,7 @@ def main():
             logging.info('Doing random search for hyper parameters...')
 
             if options.model == 'rf':
-                param_grid = {"n_estimators": [10, 100, 200, 800],
+                param_grid = {"n_estimators": [10, 20, 50, 100],
                               "max_depth": [3, 20, None],
                               "max_features": ["auto", "sqrt", "log2", None],
                               "min_samples_split": [2,5,10],
@@ -259,13 +254,13 @@ def main():
             random_search = RandomizedSearchCV(model,
                                                param_distributions=param_grid,
                                                n_iter=int(options.n_iter_search),
+                                               scoring='neg_root_mean_squared_error',
                                                n_jobs=-1)
 
             random_search.fit(X_train, y_train)
             logging.info("RandomizedSearchCV done.")
             fname = options.output_path+'/random_search_cv_results.txt'
-            io.report_cv_results(random_search.cv_results_, fname)
-            #io._upload_to_bucket(filename=fname, ext_filename=fname)
+            io.report_cv_results(random_search.cv_results_, fname, fname)
             sys.exit()
         else:
             logging.info('Training...')
@@ -298,34 +293,34 @@ def main():
 
         # Check training score to estimate amount of overfitting
         # Here we assume that we have a datetime index (from time columns)
-        y_pred_train = model.predict(X_train)
+        y_pred_train = yscaler.inverse_transform(model.predict(X_train))
         rmse_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
         mae_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
-        logging.info('Training data RMSE: {} and MAE: {}'.format(rmse_train, mae_train))
 
-        #try:
-        if True:
-            print(train)
-            #range = ('2013-02-01','2013-02-28')
-            range = ('2010-01-01','2010-01-02')
+        if options.model in ['rf', 'lr', 'ard', 'gp']:
+            logging.info('Training data RMSE: {}, MAE: {}, and R2: {}'.format(rmse_train, mae_train, model.score(X_train, y_train)))
+
+
+        try:
+            train.sort_values(by='time', inplace=True)
+            train.set_index('time', inplace=True)
+
+            range = ('2011-03-01','2011-03-31')
             X_train_sample = train.loc[range[0]:range[1], options.feature_params].astype(np.float32).values
+            y_train_sample = train.loc[range[0]:range[1], options.label_params].astype(np.float32).values.ravel()
+            times = train.loc[range[0]:range[1], :].index.values.ravel()
 
-            target = train.loc[range[0]:range[1], options.label_params].astype(np.float32).values.ravel()
-            y_pred_sample = model.predict(X_train_sample)
-
-            times = train.loc[range[0]:range[1], 'time'].values
-            df = pd.DataFrame(times + y_pred_sample)
-            print(df)
-            sys.exit()
+            y_pred_sample = yscaler.inverse_transform(model.predict(X_train_sample))
+            df = pd.DataFrame(y_pred_sample, index=times)
 
             # Draw visualisation
-            fname='{}/timeseries_training_data.png'.format(options.output_path)
-            viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname)
+            fname='{}/timeseries_training_data_{}_{}.png'.format(options.output_path, range[0], range[1])
+            viz.plot_delay(times, y_train_sample, y_pred_sample, 'Delay for station {}'.format(options.locations[0]), fname)
 
-            fname='{}/scatter_all_stations.png'.format(options.vis_path)
-            viz.scatter_predictions(times, target, y_pred, savepath=options.vis_path, filename='scatter_{}'.format(station))
-        #except KeyError:
-        #    pass
+            fname='scatter_training_data_{}_{}.png'.format(range[0], range[1])
+            viz.scatter_predictions(times, y_train_sample, y_pred_sample, savepath=options.output_path, filename=fname)
+        except KeyError:
+            pass
 
         # Mean delay over the whole dataset (both train and validation),
         # used to calculate Brier Skill
@@ -356,9 +351,6 @@ def main():
         start_times.append(start.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times.append(end.strftime('%Y-%m-%dT%H:%M:%S'))
         end_times_obj.append(end)
-
-        if options.model in ['rf', 'lr', 'ard', 'gp']:
-            logging.info('R2 score for training: {}'.format(model.score(X_train, y_train)))
 
         logging.info('RMSE: {}'.format(rmse))
         logging.info('MAE: {}'.format(mae))

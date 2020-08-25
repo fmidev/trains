@@ -14,6 +14,18 @@ services:
     command: python -u bin/balance_dataset.py --logging_level ${LOGGING:-INFO} --src_dataset trains_data  --src_table features_wo_testset --dst_dataset trains_data --dst_table features_balanced_test --no_balance
 
 #############
+  sep:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/trains:gpu
+    command: python -u bin/sep_testset.py --logging_level ${LOGGING:-INFO}
+
+#############
   impute:
     volumes:
       - ~:/root:ro
@@ -34,7 +46,7 @@ services:
       - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-    image: tervo/trains:cpu
+    image: tervo/trains:gpu
     command: python -u bin/train_scikit.py --config_filename cnf/rf.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 #############
   lr:
@@ -277,12 +289,12 @@ services:
 
   jup:
       volumes:
-        - ~/Dropbox/tyot/trains:/home/jovyan/work
+        - ~/Dropbox/tyot:/home/jovyan
       environment:
         - GOOGLE_APPLICATION_CREDENTIALS=/home/jovyan/work/cnf/TRAINS-full.json
       image: tervo/pystan
       ports:
-        - "80:8888"
+        - "8888:8888"
 
   geopandas:
       volumes:

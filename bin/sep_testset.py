@@ -19,17 +19,16 @@ def main():
     io = _io.IO()
 
     times = []
-    times.append({'starttime': dt.datetime.strptime('2014-01-01', "%Y-%m-%d"),
-                  'endtime': dt.datetime.strptime('2014-02-01', "%Y-%m-%d")
-                 })
-
-    times.append({'starttime': dt.datetime.strptime('2016-06-01', "%Y-%m-%d"),
-                  'endtime': dt.datetime.strptime('2016-07-01', "%Y-%m-%d")
+    # times.append({'starttime': dt.datetime.strptime('2011-02-01', "%Y-%m-%d"),
+    #               'endtime': dt.datetime.strptime('2011-02-28', "%Y-%m-%d")
+    #              })
+    times.append({'starttime': dt.datetime.strptime('2012-01-01', "%Y-%m-%d"),
+                  'endtime': dt.datetime.strptime('2012-01-31', "%Y-%m-%d")
     })
-    times.append({'starttime': dt.datetime.strptime('2017-02-01', "%Y-%m-%d"),
-                  'endtime': dt.datetime.strptime('2017-03-01', "%Y-%m-%d")})
+    # times.append({'starttime': dt.datetime.strptime('2013-06-01', "%Y-%m-%d"),
+    #               'endtime': dt.datetime.strptime('2013-06-30', "%Y-%m-%d")})
 
-    logging.info('Using times: {}'.format(times))
+    #logging.info('Using times: {}'.format(times))
 
     for t in times:
         start = t['starttime']
@@ -46,8 +45,8 @@ def main():
                            dataset=options.src_dataset,
                            table=options.src_table)
 
-        #print(data.shape
-        data.set_index(['time', 'trainstation'], inplace=True)
+        #print(data.shape)
+        #data.set_index(['time', 'trainstation'], inplace=True)
         #print(data)
         bq.dataset_to_table(data, options.dst_dataset, options.dst_table)
 
@@ -59,7 +58,7 @@ if __name__=='__main__':
     parser.add_argument('--src_dataset', type=str, default='trains_data', help='Src dataset name for features')
     parser.add_argument('--src_table', type=str, default='features', help='Src table name for features')
     parser.add_argument('--dst_dataset', type=str, default='trains_data', help='Dst dataset name for features')
-    parser.add_argument('--dst_table', type=str, default='features_wo_testset_v2', help='Dst table name for features')
+    parser.add_argument('--dst_table', type=str, default='features_testset_v3', help='Dst table name for features')
 
     parser.add_argument('--logging_level',
                         type=str,

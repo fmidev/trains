@@ -119,7 +119,8 @@ def main():
 
         if options.month:
             logging.info('Adding month to the dataset...')
-            data['month'] = data['time'].map(lambda x: x.month)
+            data = data.assign(month=lambda df: df.loc[:, 'time'].map(lambda x: x.month))
+            #data['month'] = data['time'].map(lambda x: x.month)
             if 'month' not in options.feature_params:
                 options.feature_params.append('month')
 
@@ -274,11 +275,15 @@ def main():
     for i in range(0, len(splits)):
         times_, avg_delay_, avg_pred_delay_ = splits[i]
 
-        rmse = math.sqrt(metrics.mean_squared_error(avg_delay_, avg_pred_delay_))
-        mae = metrics.mean_absolute_error(avg_delay_, avg_pred_delay_)
-        r2 = metrics.r2_score(avg_delay_, avg_pred_delay_)
-        rmse_stat = math.sqrt(metrics.mean_squared_error(avg_delay_, np.full_like(avg_delay_, mean_delay)))
-        skill = 1 - rmse/rmse_stat
+        try:
+            rmse = math.sqrt(metrics.mean_squared_error(avg_delay_, avg_pred_delay_))
+            mae = metrics.mean_absolute_error(avg_delay_, avg_pred_delay_)
+            r2 = metrics.r2_score(avg_delay_, avg_pred_delay_)
+            rmse_stat = math.sqrt(metrics.mean_squared_error(avg_delay_, np.full_like(avg_delay_, mean_delay)))
+            skill = 1 - rmse/rmse_stat
+        except ValueError:
+            logging.warning('Zero samples in some class')
+            continue
 
         logging.info('Month: {}'.format(i+1))
         logging.info('RMSE of average delay over all stations: {:.4f}'.format(rmse))

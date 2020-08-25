@@ -7,12 +7,12 @@ import math
 import numpy as np
 import pandas as pd
 
-import tensorflow as tf
-from tensorflow.python.estimator.export import export
-from tensorflow.python.framework import constant_op
+# import tensorflow as tf
+# from tensorflow.python.estimator.export import export
+# from tensorflow.python.framework import constant_op
 #from tensorflow.contrib import predictor
 
-from keras.preprocessing.sequence import TimeseriesGenerator
+#from keras.preprocessing.sequence import TimeseriesGenerator
 
 class PredictionError(Exception):
    """Empty data exception"""
@@ -215,15 +215,15 @@ class Predictor():
         return lst target, lst prediction
         """
         if self.options.classifier == 'lstm':
-            fname = self.options.save_path+'/classifier.h5'
-            classifier = self.model_loader.load_classifier(fname, fname, self.options)
+            classifier = self.model_loader.load_classifier(self.options.save_path, 'classifier.h5', self.options)
         else:
-            fname = self.options.save_path+'/classifier.pkl'
-            classifier = self.model_loader.load_scikit_model(fname, fname, True)
+            classifier = self.model_loader.load_scikit_model(self.options.save_path, 'classifier.pkl', True)
 
         classifier.limit = self.options.class_limit
+        classifier.set_y(data.loc[:, self.options.label_params])
+        regressor = classifier.regressor
 
-        regressor = self.model_loader.load_scikit_model(self.options.save_file, self.options.save_file, True)
+        #regressor = self.model_loader.load_scikit_model(self.options.save_path, 'regressor.pkl', False)
 
         if self.options.normalize:
             xscaler, yscaler = self.model_loader.load_scalers(self.options.save_path)
@@ -232,31 +232,37 @@ class Predictor():
         # Pick feature and label data from all data
         features = data.loc[:, self.options.feature_params].astype(np.float64).values
 
-        logging.info('Predicting with classifier using limit {}...'.format(classifier.limit))
-        y_pred_bin = classifier.predict(features, type='bool')
+        #logging.info('Predicting with classifier using limit {}...'.format(classifier.limit))
+        #y_pred_bin = classifier.predict(features, type='bool')
         #y_pred_bin = np.fromiter(map(lambda x: False if x < .5 else True, y_pred), dtype=np.bool)
 
-        self.y_pred_bin = y_pred_bin
-        self.y_pred_bin_proba = classifier.predict_proba(features)
-
-        # Pick only severe values
-        X = features[(len(features)-len(y_pred_bin)):]
-
+        self.y_pred_bin = classifier.predict(features, type='int')
+        self.y_pred_bin_proba = classifier.y_pred_proba
+        X = features[(len(features)-len(self.y_pred_bin)):]
         logging.info('Predicting with regressor...')
         y_pred_reg = regressor.predict(X)
 
         if self.options.normalize and yscaler is not None:
             y_pred_reg = yscaler.inverse_transform(y_pred_reg)
 
-        a = np.fromiter(map(lambda x: 0 if not x else 1, y_pred_bin), dtype=np.int32)
-        # LSTM do not have first time_steps
-        X = X[(len(X)-len(a)):]
-        y_pred =  np.choose(a, (np.full(X.shape[0], self.mean_delay), y_pred_reg))
-        #y_pred =  np.choose(a, (np.zeros(X.shape[0]), y_pred_reg))
+        #a = np.fromiter(map(lambda x: 0 if not x else 1, y_pred_bin), dtype=np.int32)
 
-        target = data.loc[(len(features)-len(y_pred_bin)):, self.options.label_params].values.ravel()
+        # LSTM do not have first time_steps
+        #X = X[(len(X)-len(self.y_pred_bin)):]
+
+        # TODO do we want this step?
+        # Pick only severe values
+        #y_pred = np.full(X.shape[0], self.mean_delay)
+        #print('y_pred:')
+        #print(y_pred.shape)
+        y_pred = np.choose(self.y_pred_bin, (np.full(X.shape[0], self.mean_delay), y_pred_reg))
+        #y_pred[self.y_pred_bin] = y_pred_reg
+
+        target = data.loc[(len(features)-len(self.y_pred_bin)):, self.options.label_params].values.ravel()
 
         return target, y_pred
+
+
 
     def pred(self, times=None, data=None):
         """
