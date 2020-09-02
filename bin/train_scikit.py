@@ -139,7 +139,11 @@ def main():
                                table=options.feature_table,
                                locations=options.locations,
                                parameters=all_param_names,
-                               only_winters=options.only_winters)
+                               only_winters=options.only_winters,
+                               reason_code_table=options.reason_code_table,
+                               reason_codes_exclude=options.reason_codes_exclude,
+                               reason_codes_include=options.reason_codes_include
+                               )
             data = io.filter_train_type(labels_df=data,
                                         train_types=options.train_types,
                                         sum_types=True,
@@ -293,7 +297,10 @@ def main():
 
         # Check training score to estimate amount of overfitting
         # Here we assume that we have a datetime index (from time columns)
-        y_pred_train = yscaler.inverse_transform(model.predict(X_train))
+        y_pred_train = model.predict(X_train)
+        if options.normalize:
+            y_pred_train = yscaler.inverse_transform(y_pred_train)
+
         rmse_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
         mae_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
 
@@ -310,16 +317,19 @@ def main():
             y_train_sample = train.loc[range[0]:range[1], options.label_params].astype(np.float32).values.ravel()
             times = train.loc[range[0]:range[1], :].index.values.ravel()
 
-            y_pred_sample = yscaler.inverse_transform(model.predict(X_train_sample))
+            y_pred_sample = model.predict(X_train_sample)
+            if options.normalize:
+                y_pred_sample = yscaler.inverse_transform(y_pred_sample)
+                
             df = pd.DataFrame(y_pred_sample, index=times)
 
             # Draw visualisation
             fname='{}/timeseries_training_data_{}_{}.png'.format(options.output_path, range[0], range[1])
-            viz.plot_delay(times, y_train_sample, y_pred_sample, 'Delay for station {}'.format(options.locations[0]), fname)
+            viz.plot_delay(times, y_train_sample, y_pred_sample, 'Train dataset delay', fname)
 
             fname='scatter_training_data_{}_{}.png'.format(range[0], range[1])
             viz.scatter_predictions(times, y_train_sample, y_pred_sample, savepath=options.output_path, filename=fname)
-        except KeyError:
+        except:
             pass
 
         # Mean delay over the whole dataset (both train and validation),

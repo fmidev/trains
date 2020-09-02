@@ -21,6 +21,7 @@ from os.path import basename
 from datetime import datetime as dt
 import matplotlib.dates as mdates
 from matplotlib.dates import MO, TU, WE, TH, FR, SA, SU
+from matplotlib import gridspec
 from math import ceil
 import pandas as pd
 from pandas.plotting import register_matplotlib_converters
@@ -366,7 +367,7 @@ class Viz:
         lines.append(l)
         labels.append('F1 curves')
 
-        l, = plt.plot(recall, precision, color='gold', lw=2)
+        l, = plt.plot(recall, precision, color='red', lw=3)
         lines.append(l)
         labels.append('Micro-average (area = {0:0.2f})'
         ''.format(average_precision))
@@ -438,7 +439,7 @@ class Viz:
         roc_auc = auc(fpr, tpr)
         logging.info('AUC: {}'.format(roc_auc))
         plt.plot([0, 1], [0, 1], 'k--')
-        plt.plot(fpr, tpr, label="ROC (AUC: {:0.2f})".format(roc_auc))
+        plt.plot(fpr, tpr, color='red', lw=3, label="ROC (AUC: {:0.2f})".format(roc_auc))
 
         plt.xlabel('False positive rate')
         plt.ylabel('True positive rate')
@@ -744,42 +745,6 @@ class Viz:
         fig = axs[0][0].get_figure()
         self._save(fig, filename)
 
-    def plot_delays(self, df, filename):
-        """
-        """
-        plt.clf()
-        axs = df.plot(alpha=0.5, subplots=True, figsize=(15,20))
-
-#        import matplotlib.dates as mdates
-
-#        years = mdates.YearLocator()   # every year
-#        months = mdates.MonthLocator()  # every month
-        # days = mdates.DayLocator()
-
-#        axs[0].xaxis.set_major_locator(years)
-#        axs[0].xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
-
-#        axs[0].xaxis.set_minor_locator(ticker.FixedLocator(minors))
-#        axs[0].xaxis.set_minor_formatter(mdates.DateFormatter('%H'))
-        #axs[0].xaxis.set_minor_locator(days)
-#        print(axs[0].get_xticklabels())
-
-        #axs[0].xaxis.set_major_locator(MaxNLocator(nbins=20, prune='upper'))
-
-        fig = axs[0].get_figure()
-        fig.autofmt_xdate()
-        for ax in axs:
-            ax.grid(True, which='major', axis='both')
-            ax.grid(True, which='minor', axis='x')
-            ax.tick_params(axis = 'both', which = 'major', labelsize = 50)
-            ax.tick_params(axis = 'both', which = 'minor', labelsize = 50)
-
-        params = {'legend.fontsize': 50}
-        plt.rcParams.update(params)
-
-        plt.ylabel('Delay [minutes]', fontsize=50)
-
-        self._save(fig, filename)
 
     def heatmap_train_station_delays(self, df, locs, filename, label='Day of year'):
         """
@@ -880,9 +845,32 @@ class Viz:
         splits.append(copy.deepcopy(temp_data))
         return splits
 
+    def plot_delays(self, df, filename):
+        """
+        """
+        plt.clf()
+        axs = df.plot(alpha=0.5, subplots=True, figsize=(15,20))
+
+        fig = axs[0].get_figure()
+        fig.autofmt_xdate()
+        for ax in axs:
+            ax.grid(True, which='major', axis='both')
+            ax.grid(True, which='minor', axis='x')
+            ax.tick_params(axis = 'both', which = 'major', labelsize = 50)
+            ax.tick_params(axis = 'both', which = 'minor', labelsize = 50)
+
+        params = {'legend.fontsize': 50}
+        plt.rcParams.update(params)
+
+        plt.ylabel('Delay [minutes]', fontsize=50)
+
+        self._save(fig, filename)
+
     def plot_delay(self, all_times, all_delay=None, all_pred_delay=None,
                    heading='Delay', filename='delay.png',
-                   all_low=None, all_high=None, min_y=20, all_proba=None):
+                   all_low=None, all_high=None, min_y=20, all_proba=None,
+                   proba_mode='separate', color_threshold=.5
+                   ):
         """
         Plot delay and predicted delay over time
         """
@@ -891,16 +879,20 @@ class Viz:
 
         splits = self._split_to_parts(all_times, [all_delay, all_pred_delay, all_low, all_high, all_proba], 2592000)
         logging.info('Data have {} splits'.format(len(splits)))
-        fig, axes = plt.subplots(len(splits), 1, figsize=(20,16), sharex=False)
+        #h = int(5*len(splits))
+        #fig, axes = plt.subplots(len(splits), 1, figsize=(20,h), sharex=False)
 
-        plt.grid()
+        #plt.grid()
         max_ = 0
 
         for i in range(0, len(splits)):
-            if len(splits) > 1:
-                ax = axes[i]
-            else:
-                ax = axes
+            # if len(splits) > 1:
+            #     ax = axes[i]
+            # else:
+            #     ax = axes
+            fig = plt.figure(figsize=(20,7.5))
+            gs = gridspec.GridSpec(2, 1, height_ratios=[2, 1], figure=fig)
+            ax = plt.subplot(gs[0])
 
             lns = []
 
@@ -920,15 +912,6 @@ class Viz:
                 if max(high) > max_:
                     max_ = max(high)
 
-            if pred_delay is not None:
-                lns += ax.plot(times,
-                               pred_delay,
-                               c="red",
-                               linewidth=0.75,
-                               label="Predicted delay")
-                if max(pred_delay) > max_:
-                    max_ = max(pred_delay)
-
             if delay is not None:
                 lns += ax.plot(times,
                                delay,
@@ -938,42 +921,68 @@ class Viz:
                 if max(delay) > max_:
                     max_ = max(delay)
 
+            if pred_delay[0] is not None:
+                lns += ax.plot(times,
+                               pred_delay,
+                               c="red",
+                               linewidth=0.775,
+                               label="Predicted delay")
+                if max(pred_delay) > max_:
+                    max_ = max(pred_delay)
+
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m/%d'))
             ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
             ax.xaxis.set_tick_params(rotation=45)
             ax.xaxis.set_visible(True)
-            ax.set_xlabel("Time")
             ax.set_ylabel("Delay [minutes]")
+
+            ax.set_yticks(list(ax.get_yticks()+[40]))
+            #ax.set_yscale('log')
             #fig.suptitle(heading, y=1.0)
 
             ax.grid(True)
             #fig.autofmt_xdate()
 
-            if proba[0] is not None:
-                ax2 = ax.twinx()
+            if proba[0] is not None and proba_mode == 'separate':
+                #ax2 = ax.twinx()
+                ax2 = plt.subplot(gs[1], sharex = ax)
                 lns += ax2.plot(times, proba, c='green', linestyle='--', linewidth=.75, label='Probability of disruptions')
                 ax2.set_ylim(0,1)
-                ax2.set_ylabel('Prob. of Disruptions')
+                ax2.set_ylabel('Probability')
+                plt.setp(ax.get_xticklabels(), visible=False)
+                ax2.grid(True)
+                ax2.set_xlabel("Time")
+            elif proba[0] is not None:
+                ax2 = ax.twinx()
+                lns += ax2.plot(times, proba, c='red', linestyle='--', linewidth=.9, label='Probability of disruptions')
+                ax2.set_ylim(0,1)
+                ax2.set_ylabel('Probability')
+                ax2.grid(False)
+                ax.set_xlabel("Time")
+
+                #gtt = [i for i, val in enumerate(proba) if val>.5]
+                paths = ax2.fill_between(
+                        times,
+                        0,
+                        1,
+                        where=(np.array(proba)>=color_threshold),
+                        facecolor='red',
+                        alpha=.2
+                        )
+                #ax2.axvspan(0.5, 1, facecolor='red', alpha=0.3)
+            else:
+                ax.set_xlabel("Time")
 
             labs = [l.get_label() for l in lns]
             ax.legend(lns, labs, frameon=False, ncol=3)
 
+            ax.set_ylim([0,max_])
 
-        for i in range(0, len(splits)):
-            if len(splits) > 1:
-                ax = axes[i]
-            else:
-                ax = axes
-            if max_ <= min_y:
-                ax.set_ylim([0,min_y])
-            else:
-                ax.set_ylim([0,max_])
+            plt.subplots_adjust(hspace=0.025)
+            plt.tight_layout()
 
-        plt.subplots_adjust(hspace=0.5)
-        plt.tight_layout()
-
-        #plt.legend(lns, labs, frameon=False)
-        self._save(plt, filename)
+            #plt.legend(lns, labs, frameon=False)
+            self._save(plt, filename+'_{}.png'.format(i))
 
     def scatter_predictions(self, times, y, y_pred,
                            y_label='True delay [minutes]',

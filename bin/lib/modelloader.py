@@ -9,13 +9,15 @@ import sys, os, argparse, logging, json
 
 from sklearn import metrics
 
+
 # from lib.convlstm import LSTMClassifier, F1, Recall, Precision, Positives, Negatives
 
 class ModelLoader():
 
-    model_loaded = False
+    model_loaded = {}
     y_scaler_loaded = False
     x_scaler_loaded = False
+    predictors = {}
 
     def __init__(self, io):
         self.io = io
@@ -24,8 +26,12 @@ class ModelLoader():
         """
         Load Scalers
         """
-        fname=save_path+'/xscaler.pkl'
-        xscaler = self.io.load_scikit_model(fname)
+        # Single model
+        try:
+            fname=save_path+'/xscaler.pkl'
+            xscaler = self.io.load_scikit_model(fname)
+        except:
+            xscaler = None
 
         try:
             fname=save_path+'/yscaler.pkl'
@@ -33,13 +39,29 @@ class ModelLoader():
         except:
             yscaler = None
 
-        return xscaler, yscaler
+        # Dual model
+        try:
+            fname=save_path+'/xscaler_classifier.pkl'
+            xscaler_classifier = self.io.load_scikit_model(fname)
+        except:
+            xscaler_classifier = None
 
-    def load_keras_model(self, save_path, save_file, force=False):
+        try:
+            fname=save_path+'/xscaler_regressor.pkl'
+            xscaler_regressor = self.io.load_scikit_model(fname)
+            fname=save_path+'/yscaler_regressor.pkl'
+            yscaler_regressor = self.io.load_scikit_model(fname)
+        except:
+            xscaler_regressor = None
+            yscaler_regressor = None
+
+        return xscaler, yscaler, xscaler_classifier, xscaler_regressor, yscaler_regressor
+
+    def load_keras_model(self, save_path, save_file, force=False, name='predictor'):
         """
         Load tf model
         """
-        if not self.model_loaded or force:
+        if not name in self.model_loaded or not self.model_loaded[name] or force:
             logging.info('Loading model from {}'.format(save_path))
 
             self.io._download_dir_from_bucket(save_path, save_path, force=force)
@@ -50,10 +72,10 @@ class ModelLoader():
             'Positives': Positives,
             'Negatives': Negatives
             }
-            self.model = load_model(save_file, custom_objects=dependencies)
-            self.model_loaded = True
+            self.predictors[name] = load_model(save_file, custom_objects=dependencies)
+            self.model_loaded[name] = True
 
-        return self.model
+        return self.predictors[name]
 
     def load_classifier(self, save_path, save_file, options):
         """
@@ -70,11 +92,11 @@ class ModelLoader():
 
         return classifier
 
-    def load_tf_model(self, save_path, save_file):
+    def load_tf_model(self, save_path, save_file, name='predictor'):
         """
         Load tf model
         """
-        if not self.model_loaded:
+        if not self.model_loaded[name]:
             logging.info('Loading model from {}/{}'.format(save_path, save_file))
 
             self.io._download_dir_from_bucket(save_path, save_path, force=True)
@@ -88,18 +110,18 @@ class ModelLoader():
             # sys.exit()
             self.X = graph.get_tensor_by_name("inputs/X:0")
             self.op_y_pred = graph.get_tensor_by_name("out_hidden/y_pred/y_pred:0")
-            self.model_loaded = True
+            self.model_loaded[name] = True
 
         return self.sess, self.op_y_pred, self.X
 
-    def load_scikit_model(self, save_path, save_file, force=False):
+    def load_scikit_model(self, save_file, force=False, name='predictor'):
         """
         Load scikit model
         """
-        if not self.model_loaded or force:
-            logging.info('Loading model from {}/{}'.format(save_path, save_file))
+        if not name in self.model_loaded or not self.model_loaded[name] or force:
+            logging.info('Loading model from {}'.format(save_file))
             #self.io._download_from_bucket(save_file, save_file)
-            self.predictor = self.io.load_scikit_model(save_path+'/'+save_file)
-            self.model_loaded = True
+            self.predictors[name] = self.io.load_scikit_model(save_file)
+            self.model_loaded[name] = True
 
-        return self.predictor
+        return self.predictors[name]

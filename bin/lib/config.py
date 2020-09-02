@@ -124,6 +124,8 @@ def read(options):
         _bval('pca')
         _bval('whiten')
         _bval('normalize')
+        _bval('normalize_regressor')
+        _bval('normalize_classifier')
         _bval('impute')
         _intval('n_loops')
         _intval('batch_size')

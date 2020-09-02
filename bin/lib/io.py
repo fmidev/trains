@@ -21,6 +21,11 @@ import datetime as dt
 import pandas as pd
 from lib.manipulator import Manipulator
 
+
+class ModelError(Exception):
+   """Prediction error exception"""
+   pass
+
 class IO(Manipulator):
 
     s3 = False
@@ -321,7 +326,7 @@ class IO(Manipulator):
             bucket = client.get_bucket(self.bucket_name)
             blob = storage.Blob(filename, bucket)
             if not blob.exists():
-                raise Exception()
+                raise ModelError()
 
             with tempfile.NamedTemporaryFile(dir='/tmp') as tmp:
                 blob.download_to_filename(str(tmp))

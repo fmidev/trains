@@ -22,11 +22,15 @@ import lib.transformer as _trans
 from lib.io import IO
 from lib.viz import Viz
 from lib.gpclassifier import GPClassifier
+from lib.nbclassifier import NBClassifier
 
 NEG_CLASS = 0
 
 class State():
     SCALER_FITTED = False
+    xscaler_classifier = None
+    xscaler_regressor = None
+    yscaler_regressor = None
 
 class EmptyDataError(Exception):
    """Empty data exception"""
@@ -114,7 +118,7 @@ def predict_timerange(test_data, feature_params, models, scalers, start, end):
     if X.shape[0] < 1:
         raise EmptyDataError
 
-    if options.normalize:
+    if options.normalize_classifier:
         X = scalers[0].transform(X)
 
     logging.info('Predicting for time range {} - {}...'.format(start, end))
@@ -170,6 +174,8 @@ def main(location=None):
             classifier = RandomForestClassifier(n_jobs=-1)
         elif options.classifier == 'gp':
             classifier = GPClassifier(noise_level=options.noise_level)
+        elif options.classifier == 'bayes':
+            classifier = NBClassifier()
         else:
             raise('Model not specificied or wrong. Add "classifier: gp" to config file.')
 
@@ -240,7 +246,11 @@ def main(location=None):
 
     data.sort_values(by=['time', 'trainstation'], inplace=True)
 
-    logging.info('Processing {} rows...'.format(len(data)))
+    if data.shape[0] < 1:
+        logging.warning('Empty dataset for {}'.format(location))
+        return
+    else:
+        logging.info('Processing {} rows...'.format(len(data)))
 
     # Filter only timesteps with large distribution in the whole network
     if options.filter_delay_limit is not None:
@@ -255,15 +265,20 @@ def main(location=None):
 
     # Balance
     if options.balance:
-        logging.info('Balancing training data...')
-        count = data_train.groupby('class').size().min()
-        # SVC can't handle more than 50 000 samples
-        if options.classifier == 'svc': count = min(count, 50000)
+        try:
+            logging.info('Balancing training data...')
+            count = data_train.groupby('class').size().min()
+            # SVC can't handle more than 50 000 samples
+            if options.classifier == 'svc': count = min(count, 50000)
 
-        count2 = int(min((options.balance_ratio*count), data_train.loc[(data_train['class'] == 0)].shape[0]))
+            count2 = int(min((options.balance_ratio*count), data_train.loc[(data_train['class'] == 0)].shape[0]))
 
-        data_train = pd.concat([data_train.loc[data_train['class'] == NEG_CLASS].sample(n=count2),
-        data_train.loc[data_train['class'] == 1].sample(n=count)])
+            data_train = pd.concat([data_train.loc[data_train['class'] == NEG_CLASS].sample(n=count2),
+            data_train.loc[data_train['class'] == 1].sample(n=count)])
+        except:
+            logging.warning('No samples in some class:\n{}',format(data_train.groupby('class').size().min()))
+            return
+
 
     logging.info('Train data:')
     io.log_class_dist(data_train.loc[:, 'class'].values, labels=[NEG_CLASS,1])
@@ -296,25 +311,36 @@ def main(location=None):
     # If asked, save used train and test splits into big query
     if options.save_data:
         tname = options.model+'_'+options.feature_dataset+'_'+options.config_name+'_train'
-        bq.nparray_to_table([X_train, y_train],
-                            [classifier_feature_params + regressor_feature_params, ['delay', 'class']],
-                            options.project,
-                            options.feature_dataset,
-                            tname
-                            )
+        tname = tname.replace('-','_')
+        df = data_train.copy()
+        df['stationname'] = location
+        bq.dataset_to_table(df, options.feature_dataset, tname)
+
+        # bq.nparray_to_table([df],
+        #                     [classifier_feature_params + regressor_feature_params, ['delay', 'class']],
+        #                     options.project,
+        #                     options.feature_dataset,
+        #                     tname
+        #                     )
+
         tname = options.model+'_'+options.feature_dataset+'_'+options.config_name+'_test'
-        bq.nparray_to_table([X_test, y_test],
-                            [classifier_feature_params + regressor_feature_params, ['delay', 'class']],
-                            options.project,
-                            options.feature_dataset,
-                            tname
-                            )
+        tname = tname.replace('-','_')
+        df = data_test.copy()
+        df['stationname'] = location
+        bq.dataset_to_table(df, options.feature_dataset, tname)
+
+        # bq.nparray_to_table([data_test],
+        #                     [classifier_feature_params + regressor_feature_params, ['delay', 'class']],
+        #                     options.project,
+        #                     options.feature_dataset,
+        #                     tname
+        #                     )
 
 
     ############################################################################
     # NORMALIZE
     ############################################################################
-    if options.normalize:
+    if options.normalize_classifier:
         logging.info('Normalizing classifier data...')
         if state.SCALER_FITTED:
             X_train_classifier = state.xscaler_classifier.transform(X_train_classifier)
@@ -330,7 +356,9 @@ def main(location=None):
             state.xscaler_classifier = xscaler_classifier
 
         X_test_classifier = state.xscaler_classifier.transform(X_test_classifier)
+        state.SCALER_FITTED = True
 
+    if options.normalize_regressor:
         logging.info('Normalizing regression data...')
         if state.SCALER_FITTED:
             X_train_regressor = state.xscaler_regressor.transform(X_train_regressor)
@@ -404,7 +432,7 @@ def main(location=None):
             regressor.fit(X_train_regressor, y_train[:,0])
             # Save classifier
             fname = save_path+'/regressor.pkl'
-            io.save_scikit_model(regressor, filename=fname, ext_filename=fname)
+            io.save_scikit_model(model, filename=fname, ext_filename=fname)
 
         # Pipe approach, only class 1 samples used in regressor training
         #transformer.set_y(y_train[:,0])
@@ -522,7 +550,11 @@ def main(location=None):
         # Sorting is actually not necessary. It's been useful for debugging.
         test_data.sort_values(by=['time', 'trainstation'], inplace=True)
         test_data.set_index('time', inplace=True)
-        logging.info('Test data contain {} rows...'.format(len(test_data)))
+        if test_data.shape[0] < 1:
+            logging.warning('Test data contain 0 rows')
+            return
+        else:
+            logging.info('Test data contain {} rows...'.format(len(test_data)))
 
         logging.info('Adding binary class to the test dataset with limit {}...'.format(options.delay_limit))
         #logging.info('Adding binary class to the dataset with limit {}...'.format(limit))
@@ -594,6 +626,15 @@ if __name__=='__main__':
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
                                                                   starttime.strftime('%Y-%m-%d'),
                                                                   endtime.strftime('%Y-%m-%d')))
+
+
+    if options.save_data:
+        tname = options.model+'_'+options.feature_dataset+'_'+options.config_name+'_train'
+        tname = tname.replace('-','_')
+        bq.delete_table(options.project, options.feature_dataset, tname)
+        tname = options.model+'_'+options.feature_dataset+'_'+options.config_name+'_test'
+        tname = tname.replace('-','_')
+        bq.delete_table(options.project, options.feature_dataset, tname)
 
     if options.locations is None:
         main()

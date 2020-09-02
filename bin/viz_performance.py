@@ -1,4 +1,4 @@
-import sys, os, argparse, logging, json
+import sys, os, argparse, logging, json, copy
 import datetime as dt
 from datetime import timedelta
 
@@ -17,7 +17,7 @@ from tensorflow.python.framework import constant_op
 from sklearn import metrics
 from sklearn.preprocessing import StandardScaler
 
-from lib.io import IO
+from lib.io import IO, ModelError
 from lib.viz import Viz
 from lib.bqhandler import BQHandler
 from lib.modelloader import ModelLoader
@@ -25,6 +25,9 @@ from lib.modelloader import ModelLoader
 from lib import config as _config
 from lib.predictor import Predictor, PredictionError
 
+
+STATION_SPECIFIC_CLASSIFIER = True
+STATION_SPECIFIC_REGRESSOR = False
 
 def main():
     """
@@ -34,7 +37,9 @@ def main():
     bq = BQHandler()
     io = IO(gs_bucket=options.gs_bucket)
     viz = Viz(io=io)
-    predictor = Predictor(io, ModelLoader(io), options)
+    predictor = Predictor(io, ModelLoader(io), options, STATION_SPECIFIC_CLASSIFIER, STATION_SPECIFIC_REGRESSOR)
+    predictor.regressor_save_file = options.save_path+'/classifier.pkl'
+    predictor.classifier_save_file = options.save_path+'/regressor.pkl'
 
     # Mean delay over the whole dataset (both train and validation),
     # used to calculate Brier Skill
@@ -49,8 +54,14 @@ def main():
                                                                   endtime.strftime('%Y-%m-%d')))
 
     # Get params
-    all_param_names = options.label_params + options.feature_params + options.meta_params
-    aggs = io.get_aggs_from_param_names(options.feature_params)
+    all_param_names = list(set(options.label_params + options.feature_params + options.meta_params + options.classifier_feature_params + options.regressor_feature_params))
+
+    # Param list is modified after retrieving data
+    classifier_feature_params = copy.deepcopy(options.classifier_feature_params)
+    regressor_feature_params = copy.deepcopy(options.regressor_feature_params)
+
+    all_feature_params = list(set(options.feature_params + options.meta_params + options.classifier_feature_params + options.regressor_feature_params))
+    aggs = io.get_aggs_from_param_names(all_feature_params)
 
     # Init error dicts
     avg_delay = {}
@@ -71,8 +82,8 @@ def main():
     stationList = io.get_train_stations(options.stations_file)
     all_data = None
 
-    if options.stations is not None:
-        stations = options.stations.split(',')
+    if options.locations is not None:
+        stations = options.locations
     else:
         stations = stationList.keys()
 
@@ -80,6 +91,16 @@ def main():
     for station in stations:
         stationName = '{} ({})'.format(stationList[station]['name'], station)
         logging.info('Processing station {}'.format(stationName))
+
+        if hasattr(options, 'classifier_model_file'):
+            predictor.classifier_save_file = options.classifier_model_file.replace('{location}', station)
+        elif STATION_SPECIFIC_CLASSIFIER:
+            predictor.classifier_save_file = options.save_path+'/{}'.format(station)+'/classifier.pkl'
+
+        if hasattr(options, 'regressor_model_file'):
+            predictor.regressor_save_file = options.regressor_model_file.replace('{location}', station)
+        elif STATION_SPECIFIC_REGRESSOR:
+            predictor.regressor_save_file = options.save_path+'/{}'.format(station)+'/regressor.pkl'
 
         station_rmse[station] = {}
         station_mae[station] = {}
@@ -106,8 +127,6 @@ def main():
                                     sum_columns=['train_count', 'delay'],
                                     aggs=aggs)
 
-        #
-
         if len(data) == 0:
             continue
 
@@ -120,11 +139,15 @@ def main():
         if options.month:
             logging.info('Adding month to the dataset...')
             data = data.assign(month=lambda df: df.loc[:, 'time'].map(lambda x: x.month))
-            #data['month'] = data['time'].map(lambda x: x.month)
             if 'month' not in options.feature_params:
                 options.feature_params.append('month')
+            if 'month' not in options.regressor_feature_params:
+                options.regressor_feature_params.append('month')
+            if 'month' not in options.classifier_feature_params:
+                options.classifier_feature_params.append('month')
 
-        data.sort_values(by=['time', 'trainstation'], inplace=True)
+
+        data.sort_values(by=['time'], inplace=True)
         logging.info('Processing {} rows...'.format(len(data)))
 
         if all_data is None:
@@ -138,12 +161,15 @@ def main():
 
         # Run prediction
         try:
-            target, y_pred = predictor.pred(times, data)
+            #target, y_pred = predictor.pred(times, data)
+            y_pred, y_pred_bin, y_pred_bin_proba = predictor.pred(times, data)
             # Drop first times which LSTM are not able to predict
-            times = times[(len(data)-len(y_pred)):]
-        except PredictionError as e:
+            #times = times[(len(data)-len(y_pred)):]
+        except (PredictionError, ModelError) as e:
             logging.error(e)
             continue
+
+        target = data.loc[:, options.label_params].reset_index(drop=True).values.ravel()
 
         if len(y_pred) < 1 or len(target) < 1:
             continue
@@ -189,6 +215,9 @@ def main():
             splits = viz._split_to_parts(list(times), [target, y_pred], 2592000)
 
         for i in range(0, len(splits)):
+
+            logging.info('Month {}:'.format(i+1))
+
             if predictor.y_pred_bin is not None:
                 times_, target_, y_pred_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
                 viz.classification_perf_metrics(y_pred_bin_proba_, y_pred_bin_, target_, options, times_, station)
@@ -207,7 +236,6 @@ def main():
             station_r2[station][i] = r2
             station_skill[station][i] = skill
 
-            logging.info('Month {}:'.format(i+1))
             logging.info('RMSE of station {} month {}: {:.4f}'.format(stationName, i+1, rmse))
             logging.info('MAE of station {} month {}: {:.4f}'.format(stationName, i+1, mae))
             logging.info('R2 score of station {} month {}: {:.4f}'.format(stationName, i+1, r2))
@@ -237,10 +265,13 @@ def main():
         io.write_csv(delay_data, fname, fname)
 
         # Draw visualisation
-        fname='{}/timeseries_{}.png'.format(options.vis_path, station)
-        proba = None
-        if predictor.y_pred_bin_proba is not None: proba = predictor.y_pred_bin_proba[:,1]
-        viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname, all_proba=proba)
+        fname='{}/timeseries_{}'.format(options.vis_path, station)
+
+        if predictor.y_pred_bin_proba is not None:
+            proba = predictor.y_pred_bin_proba[:,1]
+            viz.plot_delay(times, target, None, 'Delay for station {}'.format(stationName), fname, all_proba=proba, proba_mode='same', color_threshold=options.class_limit)
+        else:
+            viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname, all_proba=None)
 
         fname='{}/scatter_all_stations.png'.format(options.vis_path)
         viz.scatter_predictions(times, target, y_pred, savepath=options.vis_path, filename='scatter_{}'.format(station))
@@ -341,7 +372,12 @@ def main():
     else:
         proba = avg_proba
     fname='{}/timeseries_avg_all_stations.png'.format(options.vis_path)
-    viz.plot_delay(all_times, avg_delay, avg_pred_delay, 'Average delay for all station', fname, all_proba=proba)
+
+    if predictor.y_pred_bin is not None:
+        viz.plot_delay(all_times, avg_delay, None, 'Average delay for all station', fname, all_proba=proba, proba_mode='same', color_threshold=options.class_limit)
+    else:
+        viz.plot_delay(all_times, avg_delay, avg_pred_delay, 'Average delay for all station', fname)
+
 
     fname='{}/scatter_all_stations.png'.format(options.vis_path)
     viz.scatter_predictions(all_times, avg_delay, avg_pred_delay, savepath=options.vis_path, filename='scatter_all_stations')
@@ -350,27 +386,19 @@ def main():
     if predictor.y_pred_bin is not None:
         all_data.sort_values(by=['time'], inplace=True)
         times = all_data.loc[:,'time'].values
-        target, y_pred = predictor.pred(times, all_data)
-        # Drop first times which LSTM are not able to predict
-        times = times[(len(all_data)-len(y_pred)):]
-        splits = viz._split_to_parts(list(times), [target, y_pred, predictor.y_pred_bin, predictor.y_pred_bin_proba], 2592000)
+        try:
+            target, y_pred = predictor.pred(times, all_data)
+            # Drop first times which LSTM are not able to predict
+            times = times[(len(all_data)-len(y_pred)):]
+            splits = viz._split_to_parts(list(times), [target, y_pred, predictor.y_pred_bin, predictor.y_pred_bin_proba], 2592000)
 
-
-    #if len(time_list) > 0:
-        # zipped = sorted(zip(time_list))
-        # zipped = sorted(zip(time_list, target_list))
-        # zipped = sorted(zip(time_list, target_list, y_pred_bin_list))
-        # zipped = sorted(zip(time_list, target_list, y_pred_bin_list, y_pred_bin_proba_list))
-        #
-        # print(len(time_list), len(target_list), len(y_pred_bin_list), len(y_pred_bin_proba_list))
-        # zipped = sorted(zip(time_list, target_list, y_pred_bin_list, y_pred_bin_proba_list))
-        # time_list, target_list, y_pred_bin_list, y_pred_bin_proba_list = map(list, zip(*zipped))
-        #splits = viz._split_to_parts(time_list, [target_list, y_pred_bin_list, y_pred_bin_proba_list], 2592000)
-
-        for i in range(0, len(splits)):
-            #times_, target_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
-            times_, target_, y_pred_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
-            viz.classification_perf_metrics(y_pred_bin_proba_, y_pred_bin_, target_, options, times_, 'all')
+            for i in range(0, len(splits)):
+                #times_, target_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
+                times_, target_, y_pred_, y_pred_bin_, y_pred_bin_proba_ = splits[i]
+                viz.classification_perf_metrics(y_pred_bin_proba_, y_pred_bin_, target_, options, times_, 'all')
+        except (PredictionError, ModelError) as e:
+            logging.error(e)
+            pass
 
 
 if __name__=='__main__':
@@ -401,5 +429,7 @@ if __name__=='__main__':
                      'ERROR':logging.ERROR,
                      'CRITICAL':logging.CRITICAL}
     logging.basicConfig(format=("[%(levelname)s] %(asctime)s %(filename)s:%(funcName)s:%(lineno)s %(message)s"), level=logging_level[options.logging_level])
+
+    logging.info('Using configuration {} | {}'.format(options.config_filename, options.config_name))
 
     main()
