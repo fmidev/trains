@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-import sys, re, itertools, copy, logging
+import sys, re, itertools, copy, logging, math
 import numpy as np
+from numpy.polynomial.polynomial import polyfit
 import matplotlib as mlp
 mlp.use('Agg')
 import matplotlib.pyplot as plt
+#import seaborn as sns;
 plt.style.use('seaborn-white')
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -16,6 +18,7 @@ from sklearn import metrics
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc, precision_score, f1_score, recall_score, average_precision_score, precision_recall_curve
 from scipy import interp
+import scipy.stats as stats
 import boto3, tempfile
 from os.path import basename
 from datetime import datetime as dt
@@ -40,6 +43,155 @@ class Viz:
         if io is not None:
             self.io = io
             self.bucket = True
+
+    def plot_gnb_features(self, model, feature_params, cols=3, classes=[0,1], fontsize=15, filename=None):
+        """ Plot GNB Features """
+
+        rows = math.ceil(len(feature_params)/cols)
+        colors = ['xkcd:sky blue', 'xkcd:tea', 'xkcd:dark orange', 'xkcd:purple grey']
+        plt.rc('font', size=fontsize)
+
+        fig, axes = plt.subplots(rows, cols, figsize=(20,20))
+
+        for i,param in enumerate(feature_params):
+            col = i%cols
+            row = math.floor(i/(cols))
+            ax = axes[row][col]
+
+            for c, class_ in enumerate(classes):
+                mu = model.theta_[c][i]
+                sigma = model.sigma_[c][i]
+
+                x = np.linspace(mu - 3*sigma, mu + 3*sigma, 100)
+
+                ax.plot(x, stats.norm.pdf(x, mu, sigma), color=colors[c], label='Class {} (mean: {:.2f}, variance: {:.2f})'.format(class_, mu, sigma))
+                ax.axvline(mu, color='k', linestyle='dashed', linewidth=1)
+
+                min_ylim, max_ylim = ax.get_ylim()
+                #ax.text(mu*1.1, max_ylim*.9-(.2*c), 'Mean: {:.2f}'.format(mu))
+
+                ax.set_title(param, fontsize=fontsize)
+                ax.tick_params(axis = 'x', which = 'major', labelsize = fontsize)
+                ax.tick_params(axis = 'y', which = 'major', labelsize = fontsize)
+
+                ax.legend(loc='upper right')
+
+        plt.tight_layout()
+        self._save(plt, filename)
+
+    def plot_learning_curve(self, estimator, X, y, title='', axes=None, ylim=None, cv=None,
+                        train_sizes=np.linspace(.1, 1.0, 5), scoring='f1_macro', filename=None):
+        """
+        Generate 3 plots: the test and training learning curve, the training
+        samples vs fit times curve, the fit times vs score curve.
+
+        Parameters
+        ----------
+        estimator : object type that implements the "fit" and "predict" methods
+            An object of that type which is cloned for each validation.
+
+        title : string
+            Title for the chart.
+
+        X : array-like, shape (n_samples, n_features)
+            Training vector, where n_samples is the number of samples and
+            n_features is the number of features.
+
+        y : array-like, shape (n_samples) or (n_samples, n_features), optional
+            Target relative to X for classification or regression;
+            None for unsupervised learning.
+
+        axes : array of 3 axes, optional (default=None)
+            Axes to use for plotting the curves.
+
+        ylim : tuple, shape (ymin, ymax), optional
+            Defines minimum and maximum yvalues plotted.
+
+        cv : int, cross-validation generator or an iterable, optional
+            Determines the cross-validation splitting strategy.
+            Possible inputs for cv are:
+
+              - None, to use the default 5-fold cross-validation,
+              - integer, to specify the number of folds.
+              - :term:`CV splitter`,
+              - An iterable yielding (train, test) splits as arrays of indices.
+
+            For integer/None inputs, if ``y`` is binary or multiclass,
+            :class:`StratifiedKFold` used. If the estimator is not a classifier
+            or if ``y`` is neither binary nor multiclass, :class:`KFold` is used.
+
+            Refer :ref:`User Guide <cross_validation>` for the various
+            cross-validators that can be used here.
+
+        train_sizes : array-like, shape (n_ticks,), dtype float or int
+            Relative or absolute numbers of training examples that will be used to
+            generate the learning curve. If the dtype is float, it is regarded as a
+            fraction of the maximum size of the training set (that is determined
+            by the selected validation method), i.e. it has to be within (0, 1].
+            Otherwise it is interpreted as absolute sizes of the training sets.
+            Note that for classification the number of samples usually have to
+            be big enough to contain at least one sample from each class.
+            (default: np.linspace(0.1, 1.0, 5))
+        """
+
+        from sklearn.model_selection import learning_curve
+        from sklearn.model_selection import ShuffleSplit
+
+        if axes is None:
+            _, axes = plt.subplots(1, 3, figsize=(20, 5))
+
+        axes[0].set_title(title)
+        if ylim is not None:
+            axes[0].set_ylim(*ylim)
+        axes[0].set_xlabel("Training examples")
+        axes[0].set_ylabel("Score")
+
+        train_sizes, train_scores, test_scores, fit_times, _ = \
+            learning_curve(estimator, X, y, cv=cv, n_jobs=-1,
+                           scoring=scoring,
+                           train_sizes=train_sizes,
+                           return_times=True)
+
+        train_scores_mean = np.mean(train_scores, axis=1)
+        train_scores_std = np.std(train_scores, axis=1)
+        test_scores_mean = np.mean(test_scores, axis=1)
+        test_scores_std = np.std(test_scores, axis=1)
+        fit_times_mean = np.mean(fit_times, axis=1)
+        fit_times_std = np.std(fit_times, axis=1)
+
+        # Plot learning curve
+        axes[0].grid()
+        axes[0].fill_between(train_sizes, train_scores_mean - train_scores_std,
+                             train_scores_mean + train_scores_std, alpha=0.1,
+                             color="r")
+        axes[0].fill_between(train_sizes, test_scores_mean - test_scores_std,
+                             test_scores_mean + test_scores_std, alpha=0.1,
+                             color="g")
+        axes[0].plot(train_sizes, train_scores_mean, 'o-', color="r",
+                     label="Training score")
+        axes[0].plot(train_sizes, test_scores_mean, 'o-', color="g",
+                     label="Cross-validation score")
+        axes[0].legend(loc="best")
+
+        # Plot n_samples vs fit_times
+        axes[1].grid()
+        axes[1].plot(train_sizes, fit_times_mean, 'o-')
+        axes[1].fill_between(train_sizes, fit_times_mean - fit_times_std,
+                             fit_times_mean + fit_times_std, alpha=0.1)
+        axes[1].set_xlabel("Training examples")
+        axes[1].set_ylabel("fit_times")
+        axes[1].set_title("Scalability of the model")
+
+        # Plot fit_time vs score
+        axes[2].grid()
+        axes[2].plot(fit_times_mean, test_scores_mean, 'o-')
+        axes[2].fill_between(fit_times_mean, test_scores_mean - test_scores_std,
+                             test_scores_mean + test_scores_std, alpha=0.1)
+        axes[2].set_xlabel("fit_times")
+        axes[2].set_ylabel("Score")
+        axes[2].set_title("Performance of the model")
+
+        self._save(plt, filename)
 
     def prec_rec_f1(self, y, y_pred, n_classes=4, filename='prec_rec_f1_bars.png'):
         """
@@ -691,7 +843,7 @@ class Viz:
     def _save(self, p, filename=None):
         """ Save file """
         if filename is not None:
-            p.savefig(filename, dpi=600)
+            p.savefig(filename, dpi=600, format="png")
             logging.info('Saved file {}'.format(filename))
             if self.bucket:
                 self.io._upload_to_bucket(filename, filename)
@@ -875,7 +1027,7 @@ class Viz:
         Plot delay and predicted delay over time
         """
         plt.clf()
-        plt.rcParams.update({'font.size': 20})
+        plt.rcParams.update({'font.size': 30})
 
         splits = self._split_to_parts(all_times, [all_delay, all_pred_delay, all_low, all_high, all_proba], 2592000)
         logging.info('Data have {} splits'.format(len(splits)))
@@ -1006,15 +1158,17 @@ class Viz:
             times, y_, y_pred_ = splits[i]
 
             fname = '{}/{}_{}.png'.format(savepath, filename, i)
-            self.scatter_prediction(y_, y_pred_, y_label, x_label, heading, fname)
+            self.scatter_prediction(y_, y_pred_, y_label, x_label, heading=heading, filename=fname)
 
         fname = '{}/{}_{}.png'.format(savepath, filename, 'all')
-        self.scatter_prediction(y, y_pred, y_label, x_label, heading, fname)
+        self.scatter_prediction(y, y_pred, y_label, x_label, heading=heading, filename=fname)
 
-    def scatter_prediction(self,  y, y_pred,
-                           x_label='True delay [minutes]',
-                           y_label='Predicted delay [minutes]',
+    def scatter_prediction(self,  y_pred, y,
+                           x_label='Predicted delay [minutes]',
+                           y_label='True delay [minutes]',
                            heading='',
+                           limit=None,
+                           plot_regression_line=True,
                            filename='scatter.png'):
         """
         Scatter prediction for single time split
@@ -1022,16 +1176,27 @@ class Viz:
         plt.rc('font', size=40)
 
         fig, ax = plt.subplots(figsize=(16,16))
+        max_ = max(np.array(y).max(), np.array(y_pred).max())
+        if limit is not None:
+            max_ = min(max_,int(limit))
+        min_ = min(np.array(y).min(), np.array(y_pred).min(), 0)
 
-        max_ = max(y + y_pred)
+        #sns.lmplot(x=y, y=y_pred)
+        plt.scatter(y, y_pred, color="xkcd:tea", s=20)
 
-        plt.scatter(y, y_pred, color="#126cc5")
+        # Fit with polyfit
+        b, m = 0, 0
+        if plot_regression_line:
+            b, m = polyfit(y, y_pred, 1)
+
+        plt.plot(np.linspace(0,max_), b + m * np.linspace(0,max_), linestyle=':', color='xkcd:rose')
+
         plt.ylabel(y_label)
         plt.xlabel(x_label)
         plt.title(heading)
 
         plt.xlim(0, max_)
-        plt.ylim(0, max_)
+        plt.ylim(min_, max_)
 
         plt.gca().set_aspect('equal', adjustable='box')
 
@@ -1190,5 +1355,24 @@ class Viz:
         a2.set_ylim(-0.1, 1.1)
         a2.set_yticks([0, 1])
         a2.set_xticks([])
+
+        self._save(plt, filename)
+
+    def plot_elbo(self, logf, report_interval, maxiter, filename, fontsize=20):
+        """
+        Plot SVGP learning
+        """
+        plt.rc('font', size=fontsize)
+        f = plt.figure(figsize=(12,6))
+        plt.tick_params(axis = 'x', which = 'major', labelsize = fontsize*3/4)
+        plt.tick_params(axis = 'y', which = 'major', labelsize = fontsize*3/4)
+
+        plt.plot(np.arange(maxiter)[::report_interval], logf, label='ELBO')
+
+        plt.xlabel("Iteration", labelpad=20)
+        _ = plt.ylabel("ELBO", labelpad=20)
+        plt.legend()
+
+        plt.tight_layout()
 
         self._save(plt, filename)
