@@ -41,7 +41,7 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-xxx.json
 ## Data
 Delay data is stored in csv files in directory data/full. See location above and structure of the files below.  
 
-Observation data can be obtained from https://opendata.fmi.fi. Please consult https://en.ilmatieteenlaitos.fi/open-data for documentation. You may also benefit the source code located in spark folder. 
+Observation data can be obtained from https://opendata.fmi.fi. Please consult https://en.ilmatieteenlaitos.fi/open-data for documentation. You may also benefit the source code located in spark folder.
 
 ### Delay data
 Data fields are following:
@@ -85,52 +85,7 @@ parser = argparse.ArgumentParser()
 options = parser.parse_args()
 _config.read(options)
 ```
-All values are stored in options object.
-
-Possible config values are (most of them are not used in every method):
-
-| Value | Affect | Default | Notice |
-|-------|--------|---------|--------|
-| y_avg | Calculate average delay based on train count | false | - |
-| y_avg_hours | Average delay with n hours (before) | 0 | - |
-| cv | Run k-fold cross-validation | false | - |
-| pca | Run PCA before training | false | - |
-| whiten | Whiten data during PCA | false | - |
-| normalize | Normalise data before training | false | - |
-| impute | Impute missing values before training | false | - |
-| n_loops | ? | ? | - |
-| batch_size | - | ? | - |
-| tf | ? | false | - |
-| day_step | ? | 5000 | - |
-| hour_step | ? | 0 | - |
-| epochs | - | 3 | - |
-| alpha | - | 0. | Used in linear regression |
-| eta0 | - | 0. | Used in linear regression |
-| power_t | - | 0. | Used in linear regression |
-| bootstrap | - | - | Used in RF |
-| n_estimators | - | - | Used in RF |
-| min_sample_split | - | - | Used in RF |
-| min_samples_leaf | - | - | Used in RF |
-| max_depth | - | - | Used in RF |
-| time_steps | int | - |  Used in LSTM |
-| cell_size | int | - | Used in LSTM |
-| lr | learning lrate, float | - | Used in LSTM |
-| n_hidden | int | - | Used in LSTM |
-| quantile | - | - | Used in LSTM |
-| p_drop | drop layer probability | - | Used in LSTM |
-| slow | if true, proceed hour by hour while training | false | Used in LSTM |
-| n_components | number of components | 4 | Used in BayesianGaussianMixture (BGM) |
-| kmeans | Calculate kmeans and use feature's distance to cluster centers  in training | false | - |
-| pca_components | If larger than 0, pre-process the data with PCA and keep corresponding components | 0 | - |
-| dbscan | - | 0 | - |
-| feature_selection | boolean | false | If set, feature selection based on coef_ or feature_importances_ is done |
-| month | boolean | false | If set, month is extracted for each timestamp and used in training as a feature param |
-| gmm_classifier | String | - | Used to determine filename of pre-trained GMM model (used in classify_scikit_gmm.py)|
-| gmm_params | String | - | Params which are used in GMM model (used in classify_scikit_gmm.py) |
-| only_winters | boolean | false | Read data only from winter months (Nov - Apr) |
-| class_limit | int | 4 | Pick only smaller classes (Used in autoencoders) |
-| evaluate | bool | False | If true, run evaluation with test data |
-
+All values are stored in options object. Please refer config files and source code for individual config variables.
 
 ## Individual Scripts
 Here are some cherry-picked notations about selected scripts. Mainly to help myself to run the scripts again.
