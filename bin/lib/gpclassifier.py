@@ -16,6 +16,7 @@ class GPClassifier(BaseEstimator):
 
     def __init__(self, params=None,model=None,limit=.5,noise_level=5):
         """ Init """
+        logging.info('Using scikit GPCLassifier')
 
         if model is None:
             kernel = PairwiseKernel(metric='laplacian') *  DotProduct() + WhiteKernel(noise_level=noise_level)
