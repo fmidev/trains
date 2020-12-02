@@ -46,7 +46,7 @@ class IO(Manipulator):
             self.bucket_name = gs_bucket
             self.gs = True
 
-    def _upload_dir_to_bucket(self, path, ext_path):
+    def _upload_dir_to_bucket(self, path, ext_path, patterns=None):
         """
         Upload all files from folder to bucket
         """
@@ -54,7 +54,12 @@ class IO(Manipulator):
             raise ValueError('S3 not implemented')
         if self.gs:
             for file in os.listdir(path):
-                self._upload_to_bucket(path+'/'+file, ext_path+'/'+file)
+                if patterns is not None:
+                    for p in patterns:
+                        if p in file:
+                            self._upload_to_bucket(path+'/'+file, ext_path+'/'+file)
+                else:
+                    self._upload_to_bucket(path+'/'+file, ext_path+'/'+file)
 
     def _upload_to_bucket(self, filename, ext_filename):
         """
@@ -326,7 +331,7 @@ class IO(Manipulator):
             bucket = client.get_bucket(self.bucket_name)
             blob = storage.Blob(filename, bucket)
             if not blob.exists():
-                raise ModelError()
+                raise ModelError('{}/{} not found '.format(self.bucket_name,filename))
 
             with tempfile.NamedTemporaryFile(dir='/tmp') as tmp:
                 blob.download_to_filename(str(tmp))
