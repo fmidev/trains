@@ -57,7 +57,7 @@ services:
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
-    image: tervo/ml:cpu
+    image: tervo/trains:gpu
     command: python -u bin/train_scikit.py --config_filename cnf/lr.ini --config_name  ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 #############
   gp:
@@ -67,8 +67,8 @@ services:
       - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
-    image: tervo/gpflow
-    command: python -u bin/train_gpflow.py --config_filename cnf/gp.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
+    image: tervo/trains:gpu
+    command: python -u bin/train_scikit.py --config_filename cnf/gp.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 
 
 #############
@@ -173,7 +173,18 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/trains:gpu
-    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-all_params_avg_1} --logging_level ${LOGGING:-INFO} --stations PSL #--only_avg 1 #--stations PSL,OL #,VS
+    command: python -u bin/viz_performance.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-all_params_avg_1} --logging_level ${LOGGING:-INFO} --stations HKI,RI,LH,KV,PAR,PM,JNS,ILM,KON,JY,HPJ,YV,TPE,TL,SK,TKU,TOR,KE,HPL,TKL,EPO,KKN,LPV,OLK
+############
+  vizldo:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+      #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+    image: tervo/trains:gpu
+    command: python -u bin/viz_performance_leave_day_out.py --config_filename ${CONFIG_FILENAME:-cnf/rf.ini} --config_name ${CONFIG_NAME:-shortv6} --logging_level ${LOGGING:-INFO} #--locations HKI,RI,PSL #,RI,LH,KV,PAR,PM,JNS,ILM,KON,JY,HPJ,YV,TPE,TL,SK,TKU,TOR,KE,HPL,TKL,EPO,KKN,LPV,OLK
 #############
   vizens:
     volumes:
