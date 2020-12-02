@@ -10,9 +10,11 @@ ENV LC_ALL en_US.UTF-8
 
 ADD bin /a/bin
 ADD cnf /a/cnf
+ADD run.sh /a/run.sh
 
 RUN chmod 777 /a
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name gaussianprocesses-rfr-hubs-1
+CMD python -u bin/train_dual.py --logging_level INFO --config_filename cnf/dual.ini --config_name gp-rfr-all-stations-all-codes-3
+#CMD bash /a/run.sh
