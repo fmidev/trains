@@ -19,7 +19,7 @@ class BQHandler(object):
     methods to insert and read storm objects to database
     """
 
-    def __init__(self, debug=False, training=False, config_filename = None):
+    def __init__(self, debug=False, training=False, config_filename = None, project = None):
         self._connect()
 
         self.parameters = None
@@ -31,6 +31,7 @@ class BQHandler(object):
         self.only_winters = False
         self.reason_codes_exclude = None
         self.reason_codes_include = None
+        self.project = project
 
     def set_params(self,
                    batch_size=None,
@@ -87,7 +88,6 @@ class BQHandler(object):
             self.reason_codes_include = reason_codes_include
 
         self.batch_num = 0
-
 
     def get_batch_num(self):
         """
@@ -151,7 +151,6 @@ class BQHandler(object):
         # if order is not None: self.order = order
         # self.only_winters = only_winters
         # self.where = where
-
         self.set_params(**kwargs)
         self.starttime, self.endtime = args
 
@@ -170,6 +169,19 @@ class BQHandler(object):
             logging.debug(sql)
             return self._query(sql)
 
+    def table_to_dataset(self, dataset, table):
+        """
+        Get table as DF dataset
+        """
+        self._connect()
+        dataset_ref = self.client.dataset(dataset)
+        table_ref = dataset_ref.table(table)
+
+        sql = "SELECT * FROM `{project}.{dataset}.{table}`".format(project=self.project,
+                                                                   dataset=dataset,
+                                                                   table=table)
+
+        return self._query(sql)
 
     def dataset_to_table(self, df, dataset, table):
         """
