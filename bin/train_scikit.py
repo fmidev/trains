@@ -22,7 +22,7 @@ from sklearn.linear_model import ARDRegression
 from sklearn.svm import SVR
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels \
-    import RBF, WhiteKernel, RationalQuadratic, ExpSineSquared
+    import RBF, WhiteKernel, RationalQuadratic, ExpSineSquared, DotProduct, PairwiseKernel
 from lib.model_functions.LocalizedLasso import LocalizedLasso
 from lib.model_functions.NetworkLasso import NetworkLasso
 
@@ -90,15 +90,8 @@ def main():
                               fit_intercept=options.fit_intercept,
                               copy_X=options.copy_X)
     elif options.model == 'gp':
-        k_long_term = 66.0**2 * RBF(length_scale=67.0)
-        k_seasonal = 2.4**2 * RBF(length_scale=90.0)* ExpSineSquared(length_scale=150, periodicity=1.0, periodicity_bounds=(0,10000))
-        k_medium_term = 0.66**2 * RationalQuadratic(length_scale=1.2, alpha=0.78)
-        k_noise = 0.18**2 * RBF(length_scale=0.134) + WhiteKernel(noise_level=0.19**2)
-        #kernel_gpml = k_long_term + k_seasonal + k_medium_term + k_noise
-        kernel_gpml = k_long_term + k_seasonal + k_medium_term + k_noise
-
-        model = GaussianProcessRegressor(kernel=kernel_gpml, #alpha=0,
-                                         optimizer=None, normalize_y=True)
+        kernel = PairwiseKernel(metric='laplacian') *  DotProduct()
+        model = GaussianProcessRegressor(kernel=kernel, alpha=options.noise_level) #alpha correspondes to white kernel
     elif options.model == 'llasso':
         model = LocalizedLasso(num_iter=options.n_loops,
                                batch_size=options.batch_size)
@@ -157,6 +150,10 @@ def main():
             if options.filter_delay_limit is not None:
                 data = io.filter_delay_with_limit(data, options.filter_delay_limit)
 
+            if options.n_samples is not None and options.n_samples < data.shape[0]:
+                logging.info('Sampling {} values from data...'.format(options.n_samples))
+                data = data.sample(options.n_samples)
+
             if options.y_avg_hours is not None:
                 data = io.calc_running_delay_avg(data, options.y_avg_hours)
 
@@ -170,10 +167,6 @@ def main():
                 data['month'] = data['time'].map(lambda x: x.month)
                 if 'month' not in options.feature_params:
                     options.feature_params.append('month')
-
-            if options.model == 'ard' and len(data) > options.n_samples:
-                logging.info('Sampling {} values from data...'.format(options.n_samples))
-                data = data.sample(options.n_samples)
 
             l_data = data.loc[:, options.label_params]
             f_data = data.loc[:, options.feature_params]
@@ -252,6 +245,8 @@ def main():
                               "shrinking": [True, False],
                               "gamma": [0.001, 0.01, 0.1],
                               "coef0": [0, 0.1, 1]}
+            elif options.model == 'gp':
+                param_grid = {'alpha': [0.1, 0.5, 1, 2, 3, 4, 5, 10]}
             else:
                 raise("No param_grid set for given model ({})".format(options.model))
 
@@ -320,7 +315,7 @@ def main():
             y_pred_sample = model.predict(X_train_sample)
             if options.normalize:
                 y_pred_sample = yscaler.inverse_transform(y_pred_sample)
-                
+
             df = pd.DataFrame(y_pred_sample, index=times)
 
             # Draw visualisation
