@@ -1,4 +1,4 @@
-FROM tervo/ml:cpu
+FROM tervo/trains:gpu
 
 RUN apt-get install locales
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -10,22 +10,10 @@ ENV LC_ALL en_US.UTF-8
 
 ADD bin /a/bin
 ADD cnf /a/cnf
-ADD xaa /a/data/full/a_b_2010-18/xaa
+# ADD xaa /a/data/full/a_b_2010-18/xaa
 
 RUN chmod 777 /a
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-# CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/ard.ini --config_name all_params_imputed
-# CMD python -u bin/feature_selection.py --logging_level INFO --config_filename cnf/lr.ini --config_name lasso_feature_selection
-
-# CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/lr.ini --config_name all_params_avg_1
-
-#CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name 1m
-
-#CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name test
-
-#CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name nlasso_10d
-CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name llasso_all_winters
-
-#CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/llasso.ini --config_name llasso_1m
+CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/lr.ini --config_name all-stations-all-codes-v1
