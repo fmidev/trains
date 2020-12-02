@@ -25,7 +25,6 @@ from lib.modelloader import ModelLoader
 from lib import config as _config
 from lib.predictor import Predictor, PredictionError
 
-
 STATION_SPECIFIC_CLASSIFIER = True
 STATION_SPECIFIC_REGRESSOR = False
 
@@ -37,16 +36,13 @@ def main():
     bq = BQHandler()
     io = IO(gs_bucket=options.gs_bucket)
     viz = Viz(io=io)
-    predictor = Predictor(io, ModelLoader(io), options, STATION_SPECIFIC_CLASSIFIER, STATION_SPECIFIC_REGRESSOR)
+    predictor = Predictor(io, ModelLoader(io), options, options.station_specific_classifier, options.station_specific_regressor)
     predictor.regressor_save_file = options.save_path+'/classifier.pkl'
     predictor.classifier_save_file = options.save_path+'/regressor.pkl'
 
     # Mean delay over the whole dataset (both train and validation),
     # used to calculate Brier Skill
-    if options.y_avg:
-        mean_delay = 3.375953418071136
-    else:
-        mean_delay = 6.011229358531166
+    mean_delay = options.mean_delay
 
     starttime, endtime = io.get_dates(options)
     logging.info('Using dataset {} and time range {} - {}'.format(options.feature_dataset,
@@ -94,12 +90,12 @@ def main():
 
         if hasattr(options, 'classifier_model_file'):
             predictor.classifier_save_file = options.classifier_model_file.replace('{location}', station)
-        elif STATION_SPECIFIC_CLASSIFIER:
+        elif options.station_specific_classifier:
             predictor.classifier_save_file = options.save_path+'/{}'.format(station)+'/classifier.pkl'
 
         if hasattr(options, 'regressor_model_file'):
             predictor.regressor_save_file = options.regressor_model_file.replace('{location}', station)
-        elif STATION_SPECIFIC_REGRESSOR:
+        elif options.station_specific_regressor:
             predictor.regressor_save_file = options.save_path+'/{}'.format(station)+'/regressor.pkl'
 
         station_rmse[station] = {}
@@ -108,14 +104,20 @@ def main():
         station_skill[station] = {}
 
         # Read data and filter desired train types (ic and commuter)
+        table = 'features_testset'
+        if hasattr(options, 'test_table'):
+            table = options.test_table
         data = bq.get_rows(starttime,
                            endtime,
                            loc_col='trainstation',
                            project=options.project,
                            dataset='trains_data',
-                           table='features_testset',
+                           table=table,
                            parameters=all_param_names,
                            only_winters=options.only_winters,
+                           reason_code_table=options.reason_code_table,
+                           reason_codes_exclude=options.reason_codes_exclude,
+                           reason_codes_include=options.reason_codes_include,
                            locations=[station])
 
         data = io.filter_train_type(labels_df=data,
@@ -265,13 +267,13 @@ def main():
         io.write_csv(delay_data, fname, fname)
 
         # Draw visualisation
-        fname='{}/timeseries_{}'.format(options.vis_path, station)
-
         if predictor.y_pred_bin_proba is not None:
+            fname='{}/timeseries_proba_{}'.format(options.vis_path, station)
             proba = predictor.y_pred_bin_proba[:,1]
             viz.plot_delay(times, target, None, 'Delay for station {}'.format(stationName), fname, all_proba=proba, proba_mode='same', color_threshold=options.class_limit)
-        else:
-            viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname, all_proba=None)
+        #else:
+        fname='{}/timeseries_regression_{}'.format(options.vis_path, station)
+        viz.plot_delay(times, target, y_pred, 'Delay for station {}'.format(stationName), fname, all_proba=None)
 
         fname='{}/scatter_all_stations.png'.format(options.vis_path)
         viz.scatter_predictions(times, target, y_pred, savepath=options.vis_path, filename='scatter_{}'.format(station))
@@ -387,7 +389,8 @@ def main():
         all_data.sort_values(by=['time'], inplace=True)
         times = all_data.loc[:,'time'].values
         try:
-            target, y_pred = predictor.pred(times, all_data)
+            target = all_data.loc[:, options.label_params].reset_index(drop=True).values.ravel()
+            y_pred, y_pred_bin, y_pred_bin_proba = predictor.pred(times, all_data)
             # Drop first times which LSTM are not able to predict
             times = times[(len(all_data)-len(y_pred)):]
             splits = viz._split_to_parts(list(times), [target, y_pred, predictor.y_pred_bin, predictor.y_pred_bin_proba], 2592000)
