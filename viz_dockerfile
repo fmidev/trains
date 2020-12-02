@@ -8,5 +8,10 @@ RUN chmod 777 /a
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 ENV MPLCONFIGDIR=/tmp
 
-CMD python -u  bin/viz_performance.py --config_filename cnf/rf.ini --config_name short
-#CMD python -u  bin/viz_performance.py --config_filename cnf/dual.ini --config_name bayes-rfr-hubs-2
+#CMD python -u  bin/viz_performance.py --config_filename cnf/lr.ini --config_name all-stations-weather-codes-v1
+#CMD python -u  bin/viz_performance.py --config_filename cnf/lr.ini --config_name all-stations-all-codes-v1
+#CMD python -u  bin/viz_performance.py --config_filename cnf/gp.ini --config_name all-stations-weather-codes-v1
+#CMD python -u  bin/viz_performance.py --config_filename cnf/gp.ini --config_name all-stations-all-codes-v1
+#CMD python -u  bin/viz_performance.py --config_filename cnf/rf.ini --config_name all-stations-weather-codes-v1
+CMD python -u  bin/viz_performance.py --config_filename cnf/rf.ini --config_name all-stations-all-codes-v1
+#CMD python -u  bin/viz_performance.py --config_filename cnf/rf.ini --config_name shortv4

@@ -2,8 +2,10 @@ FROM tervo/trains:gpu
 
 ADD bin /a/bin
 ADD cnf /a/cnf
+ADD run.sh /a/run.sh
 RUN chmod -R 777 /a
 
 ENV GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-65c1b150fed0.json
 
-CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name short
+#CMD bash run.sh
+CMD python -u bin/train_scikit.py --logging_level INFO --config_filename cnf/rf.ini --config_name all-stations-all-codes-v1
