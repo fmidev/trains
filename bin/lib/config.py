@@ -145,6 +145,11 @@ def read(options):
         _fval('class_limit', .5)
         _bval('smote')
         _fval('balance_ratio', 1)
+        _bval('station_specific_classifier', False)
+        _bval('station_specific_regressor', False)
+        _bval('restore', False)
+        _bval('plot_learning', False)
+        _fval('mean_delay', 6.011229358531166)
 
         # GP
         _fval('noise_level', 5)
