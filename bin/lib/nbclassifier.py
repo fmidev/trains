@@ -16,6 +16,7 @@ class NBClassifier(BaseEstimator):
     def __init__(self, params=None,model=None,limit=.5,noise_level=5):
         """ Init """
 
+        logging.info('Using NBClassifier')
         if model is None:
             self.model = GaussianNB()
         else:
@@ -53,14 +54,17 @@ class NBClassifier(BaseEstimator):
         if not self.fitted:
             raise NotFittedError()
 
-        logging.info('Predicting fit classifier using limit {}...'.format(self.limit))
-        self.y_pred_proba = self.model.predict_proba(X)
+        #logging.info('Predicting fit classifier using limit {}...'.format(self.limit))
+        self.y_pred_proba = self.predict_proba(X)
+
+        y_pred = self.model.predict(X)
 
         if type == 'bool':
-            return np.fromiter(map(lambda x: False if x < self.limit else True, self.y_pred_proba[:,1]), dtype=np.bool)
+            return np.fromiter(map(lambda x: False if x < 1 else True, y_pred), dtype=np.bool)
+            #return np.fromiter(map(lambda x: False if x < self.limit else True, self.y_pred_proba[:,1]), dtype=np.bool)
 
-        # Scale to [0 1]
-        return np.fromiter(map(lambda x: 0 if x < self.limit else 1, self.y_pred_proba[:,1]), dtype=np.int)
+        return y_pred
+        #return np.fromiter(map(lambda x: 0 if x < self.limit else 1, self.y_pred_proba[:,1]), dtype=np.int)
 
 
     def predict_proba(self, X):
