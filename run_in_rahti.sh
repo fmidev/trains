@@ -2,6 +2,7 @@
 MEM="64Gi"
 CPU="8"
 GPU="0"
+COMMAND=""
 
 for i in "$@"
 do
@@ -26,14 +27,24 @@ case $i in
     NAME="${i#*=}"
     shift # past argument=value
     ;;
+    -d=*|--command=*)
+    COMMAND="${i#*=}"
+    shift # past argument=value
+    ;;
     *)
-          # unknown option
+    # unknown option
     ;;
 esac
 done
+#RUN_NAME=${NAME//[_:]/-}-$RANDOM
+RUN_NAME=${NAME//[_:]/-}
 
-RUN_NAME=${NAME//[_:]/-}-$RANDOM
-#RUN_NAME=${NAME//[_:]/-}
+if  [ -z "$COMMAND" ]; then
+  COMMAND_STR=""
+else
+  COMMAND_STR='"command":'"$COMMAND"','
+fi
+
 set -x
 docker build -t tervo/$NAME -f $FILE .
 docker push tervo/$NAME
@@ -62,6 +73,7 @@ if [ "$GPU" -gt 0 ]; then
         ],
         "image": "tervo/'$NAME'",
         "name": "'$RUN_NAME'",
+        '$COMMAND_STR'
         "resources": {
           "limits": {
             "cpu": "'$CPU'",
@@ -100,6 +112,7 @@ else
         ],
         "image": "tervo/'$NAME'",
         "name": "'$RUN_NAME'",
+        '$COMMAND_STR'
         "resources": {
           "limits": {
             "cpu": "'$CPU'",
@@ -123,8 +136,9 @@ else
         }
       }]
     }
-  }'
+  }' 
 fi
-sleep 15
-oc logs --follow $RUN_NAME
+#sleep 15
+#oc logs --follow $RUN_NAME
 #oc expose service $RUN_NAME
+#

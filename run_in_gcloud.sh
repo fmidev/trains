@@ -1,9 +1,8 @@
 #!/bin/bash
-
-MEM="32"
+MEM="256Gi"
 CPU="16"
 GPU="0"
-PRE="0"
+COMMAND=""
 
 for i in "$@"
 do
@@ -28,27 +27,106 @@ case $i in
     NAME="${i#*=}"
     shift # past argument=value
     ;;
-    -p=*|--preemptible=*)
-    PRE="${i#*=}"
+    -d=*|--command=*)
+    COMMAND="${i#*=}"
     shift # past argument=value
     ;;
     *)
-          # unknown option
+    # unknown option
     ;;
 esac
 done
-
+#RUN_NAME=${NAME//[_:]/-}-$RANDOM
 RUN_NAME=${NAME//[_:]/-}
 
-set -x
-set -e
-
-PREEMPTIBLE=""
-if [[ $PRE -eq 1 ]]; then
-  PREEMPTIBLE="--preemptible"
+if  [ -z "$COMMAND" ]; then
+  COMMAND_STR=""
+else
+  COMMAND_STR='"command":'"$COMMAND"','
 fi
 
+set -x
 docker build -t gcr.io/trains-197305/$NAME -f $FILE .
-gcloud docker -- push gcr.io/trains-197305/$NAME
-#gcloud beta compute instances create-with-container $RUN_NAME --container-image eu.gcr.io/trains-197305/$NAME --custom-cpu $CPU --custom-memory $MEM --boot-disk-size 200 --preemptible --container-restart-policy never --tags http-server
-gcloud beta compute instances create-with-container $RUN_NAME --container-image gcr.io/trains-197305/$NAME --custom-cpu $CPU --custom-memory $MEM --boot-disk-size 200 --container-restart-policy never --tags http-server $PREEMTIBLE
+docker push gcr.io/trains-197305/$NAME
+
+if [ "$GPU" -gt 0 ]; then
+  kubectl run $RUN_NAME --image gcr.io/trains-197305/$NAME --expose=true --port 8888 --replicas=1 --restart=Never --image-pull-policy='Always' --overrides='
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "spec": {
+      "containers": [
+      {
+        "env": [
+        {
+          "name": "NVIDIA_VISIBLE_DEVICES",
+          "value": "all"
+        },
+        {
+          "name": "NVIDIA_DRIVER_CAPABILITIES",
+          "value": "compute,utility"
+        },
+        {
+          "name": "NVIDIA_REQUIRE_CUDA",
+          "value": "cuda>=8.0"
+        }
+        ],
+        "image": "tervo/'$NAME'",
+        "name": "'$RUN_NAME'",
+        '$COMMAND_STR'
+        "resources": {
+          "limits": {
+            "cpu": "'$CPU'",
+            "memory": "'$MEM'",
+            "nvidia.com/gpu": '$GPU'
+          },
+          "requests": {
+            "cpu": "'$CPU'",
+            "memory": "'$MEM'",
+            "nvidia.com/gpu": '$GPU'
+          }
+        },
+        "volumeMounts": [{
+          "mountPath": "/board",
+          "name": "volboard"
+        }]
+      }
+      ],
+      "volumes": [{
+        "name":"volboard",
+        "persistentVolumeClaim": {
+          "claimName": "vol-board"
+        }
+      }]
+    }
+  }'
+else
+  kubectl run $RUN_NAME --image gcr.io/trains-197305/$NAME --expose=true --port 8888 --replicas=1 --restart=Never --image-pull-policy='Always' --overrides='
+  {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "spec": {
+      "containers": [
+      {
+        "env": [],
+        "image": "tervo/'$NAME'",
+        "name": "'$RUN_NAME'",
+        '$COMMAND_STR'
+        "resources": {
+          "limits": {
+            "cpu": "'$CPU'",
+            "memory": "'$MEM'"
+          },
+          "requests": {
+            "cpu": "'$CPU'",
+            "memory": "'$MEM'"
+          }
+        }
+      }]
+    }
+  }'
+fi
+#sleep 15
+#oc logs --follow $RUN_NAME
+#oc expose service $RUN_NAME
+#

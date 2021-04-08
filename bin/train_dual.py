@@ -193,12 +193,15 @@ def main(location=None):
 
     data = io.filter_train_type(labels_df=data,
                                 train_types=options.train_types,
-                                sum_types=True,
+                                sum_types=False,
                                 train_type_column='train_type',
                                 location_column='trainstation',
                                 time_column='time',
                                 sum_columns=sum_columns,
                                 aggs=aggs)
+
+    if options.y_avg:
+        data = io.calc_delay_avg(data)
 
     data.sort_values(by=['time', 'trainstation'], inplace=True)
 
@@ -245,6 +248,8 @@ def main(location=None):
     # GNB performs better with smaller training set
     if options.classifier == 'svc':
         data_train = data_train.sample(min(50000, len(data_train)))
+    if options.classifier == 'gpscikit':
+        data_train = data_train.sample(min(100000, len(data_train)))
     if options.classifier == 'bayes':
         data_train = data_train.sample(min(10000, len(data_train)))
 
@@ -633,6 +638,9 @@ def main(location=None):
                                          sum_columns=['delay'],
                                          aggs=aggs)
 
+        if options.y_avg:
+            test_data = io.calc_delay_avg(test_data)
+
         # Sorting is actually not necessary. It's been useful for debugging.
         test_data.sort_values(by=['time', 'trainstation'], inplace=True)
         test_data.set_index('time', inplace=True)
@@ -703,6 +711,8 @@ if __name__=='__main__':
 
     parser.add_argument('--config_filename', type=str, default=None, help='Configuration file name')
     parser.add_argument('--config_name', type=str, default=None, help='Configuration file name')
+    parser.add_argument('--starttime', type=str, default=None, help='Data starttime')
+    parser.add_argument('--endtime', type=str, default=None, help='Data endtime')
     parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
     parser.add_argument('--skip_evaluation_reason_codes', dest='skip_evaluation_reason_codes', action='store_true', help='If set, reason codes are ignored in evaluation')
     parser.set_defaults(skip_evaluation_reason_codes=False)

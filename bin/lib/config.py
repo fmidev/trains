@@ -23,6 +23,12 @@ def read(options):
             val = default
         setattr(options, name, val)
 
+    def _strval(name, default=None):
+        ''' Convert float val to float taking possible None value into account'''
+        val = getattr(options, name, default)
+        if val == 'None': val = None
+        setattr(options, name, val)
+
     def _bval(name, default=False):
         ''' Convert option from int to bool'''
         val = getattr(options, name, False)
@@ -150,6 +156,7 @@ def read(options):
         _bval('restore', False)
         _bval('plot_learning', False)
         _fval('mean_delay', 6.011229358531166)
+        _intval('train_count_limit', None)
 
         # GP
         _fval('noise_level', 5)
@@ -195,6 +202,12 @@ def read(options):
         _intval('min_samples_split')
         _intval('min_samples_leaf')
         _intval('max_depth')
+
+        # GBDT
+        _fval('subsample')
+        _fval('gbdt_learning_rate')
+        _fval('ccp_alpha')
+        _strval('max_features')
 
         # SVC
         _bval('probability')

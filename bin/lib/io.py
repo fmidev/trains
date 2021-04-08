@@ -10,6 +10,7 @@ from google.cloud import storage
 #from keras.models import Model, model_from_yaml
 #import tensorflow as tf
 
+from imblearn.over_sampling import SMOTE
 import googleapiclient.discovery
 
 import boto3
@@ -127,6 +128,52 @@ class IO(Manipulator):
     #
     # GENERAL
     #
+
+    def balance_data(self, data, balance_ratio, feature_params, meta_params, n_samples=None, neg_class=0):
+        """
+        Balance data to given
+
+        data : DataFrame
+               Data to balance
+        balance_ratio: int
+                       balance ratio
+        """
+
+        if balance_ratio > 0:
+            logging.info('Balancing training data by down-sampling...')
+            count = data.groupby('class').size().min()
+            if n_samples is not None:
+                count = int(min(count, n_samples/(balance_ratio+1)))
+            count_class_0 = int(min((balance_ratio*count), data.loc[(data['class'] == 0)].shape[0]))
+
+            # If there isn't enough large class members the smaller group
+            # may need to be downsampled
+            if count_class_0/balance_ratio < count:
+                count = int(count_class_0/balance_ratio)
+
+            data = pd.concat([data.loc[data['class'] == neg_class].sample(n=count_class_0),
+            data.loc[data['class'] == 1].sample(n=count)])
+
+        else:
+            logging.info('Balancing training data by over-sampling...')
+
+            ratio = 1/(-1*balance_ratio)
+            smote = SMOTE(sampling_strategy=ratio)
+
+            y_train = data.loc[:,'class'].astype(np.int32).values
+            X_train = data.loc[:,feature_params].copy().astype(np.float32).values
+            meta = data.loc[:,meta_params]
+
+            X_train, y_train = smote.fit_resample(X_train, y_train)
+            data = pd.DataFrame(X_train, columns=feature_params)
+            data['class'] = y_train
+            data = data.join(meta)
+
+            #data = pd.DataFrame(X_train + y_train, columns=feature_params+['class'])
+
+        return data
+
+
     def report_cv_results(self, results, filename=None, ext_filename=None, n_top=5):
         res = ""
         for i in range(1, n_top + 1):

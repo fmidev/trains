@@ -49,6 +49,16 @@ services:
     image: tervo/trains:gpu
     command: python -u bin/train_scikit.py --config_filename cnf/rf.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
 #############
+  gbdt:
+    volumes:
+      - ~:/root:ro
+      - ~/trains:/a
+      - /tmp:/tmp
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+    image: tervo/trains:gpu
+    command: python -u bin/train_scikit.py --config_filename cnf/gbdt.ini --config_name ${CONFIG_NAME:-test}
+#############
   lr:
     volumes:
       - ~:/root:ro
@@ -149,7 +159,16 @@ services:
       #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
     image: tervo/trains:gpu
     command: python -u bin/train_dual.py --config_filename cnf/dual.ini --config_name ${CONFIG_NAME:-test} --logging_level ${LOGGING:-INFO}
-
+  train_classifier:
+      volumes:
+        - ~:/root:rw # Muuta ro:ksi!
+        - ~/trains:/a
+        - /tmp:/tmp
+      environment:
+        - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-full.json
+        #- HTTPS_PROXY=wwwproxy.fmi.fi:8080
+      image: tervo/trains:gpu
+      command: python -u bin/train_classifier.py --config_filename cnf/classifiers.ini --config_name ${CONFIG_NAME:-rfc-weather-codes} 
   dual_lstm:
     volumes:
       - ~:/root:rw # Muuta ro:ksi!
@@ -232,7 +251,7 @@ services:
       - /tmp:/tmp
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/a/cnf/TRAINS-e3a33a82c833.json
-    image: tervo/ml:cpu
+    image: tervo/trains:gpu
     command: python -u bin/test.py --logging_level ${LOGGING:-INFO} --config_filename ${CONFIG_FILENAME:-cnf/llasso.ini} --config_name ${CONFIG_NAME:-test}
 #############
   runtest:

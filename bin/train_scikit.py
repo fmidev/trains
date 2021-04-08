@@ -13,10 +13,10 @@ import pandas as pd
 from sklearn.decomposition import IncrementalPCA
 from sklearn.preprocessing import StandardScaler
 
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV,TimeSeriesSplit
 from sklearn.model_selection import train_test_split
 
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor,GradientBoostingRegressor
 from sklearn.linear_model import SGDRegressor
 from sklearn.linear_model import ARDRegression
 from sklearn.svm import SVR
@@ -67,6 +67,17 @@ def main():
                                       max_depth=options.max_depth,
                                       bootstrap=options.bootstrap
                                       )
+    elif options.model == 'gbdt':        
+        model = GradientBoostingRegressor(
+            subsample=options.subsample,
+            n_estimators=options.n_estimators,
+            min_samples_split=options.min_samples_split,
+            max_features=options.max_features,
+            max_depth=options.max_depth,
+            loss=options.loss,
+            learning_rate=options.gbdt_learning_rate,
+            ccp_alpha=options.ccp_alpha
+        )
     elif options.model == 'lr':
         model = SGDRegressor(warm_start=True,
                              max_iter=options.n_loops,
@@ -223,12 +234,23 @@ def main():
             logging.info('Doing random search for hyper parameters...')
 
             if options.model == 'rf':
-                param_grid = {"n_estimators": [10, 20, 50, 100],
+                param_grid = {"n_estimators": [5, 10, 50, 100],
                               "max_depth": [3, 20, None],
                               "max_features": ["auto", "sqrt", "log2", None],
                               "min_samples_split": [2,5,10],
                               "min_samples_leaf": [1, 2, 4, 10],
                               "bootstrap": [True, False]}
+            elif options.model == 'gbdt':
+                param_grid = {
+                    "loss": ['ls', 'lad', 'huber'],
+                    'learning_rate': [.0001, .001, .01, .1],
+                    "n_estimators": [10, 50, 100, 200],
+                    'subsample': [.1, .25, .5, 1],
+                    "min_samples_split": [2,5,10],
+                    "max_depth": [3, 10, 20, None],
+                    "max_features": ["auto", "sqrt", "log2", None],
+                    'ccp_alpha': [0, .001, 0.1]
+                    }
             elif options.model == 'lr':
                 param_grid = {"penalty": [None, 'l2', 'l1'],
                               "alpha": [0.00001, 0.0001, 0.001, 0.01, 0.1],
@@ -254,16 +276,21 @@ def main():
                                                param_distributions=param_grid,
                                                n_iter=int(options.n_iter_search),
                                                scoring='neg_root_mean_squared_error',
-                                               n_jobs=-1)
+                                               n_jobs=-1,
+                                               refit=True,
+                                               return_train_score=True,
+                                               cv=TimeSeriesSplit(n_splits=5),
+                                               verbose=1
+                                               )
 
             random_search.fit(X_train, y_train)
             logging.info("RandomizedSearchCV done.")
             fname = options.output_path+'/random_search_cv_results.txt'
             io.report_cv_results(random_search.cv_results_, fname, fname)
-            sys.exit()
+            model = random_search.best_estimator_
         else:
             logging.info('Training...')
-            if options.model in ['rf', 'svr', 'ard', 'gp']:
+            if options.model in ['rf', 'svr', 'ard', 'gp','gbdt']:
                 model.fit(X_train, y_train)
                 if options.feature_selection:
                     X_complete = X_train
@@ -290,6 +317,12 @@ def main():
 
         # EVALUATE #############################################################
 
+        # Mean delay over the whole dataset (both train and validation),
+        # used to calculate Brier Skill
+        mean_delay = options.mean_delay
+        if mean_delay is None:
+            mean_delay = 3.375953418071136 if options.y_avg else 6.011229358531166
+        
         # Check training score to estimate amount of overfitting
         # Here we assume that we have a datetime index (from time columns)
         y_pred_train = model.predict(X_train)
@@ -297,11 +330,11 @@ def main():
             y_pred_train = yscaler.inverse_transform(y_pred_train)
 
         rmse_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
-        mae_train = np.sqrt(mean_squared_error(y_train, y_pred_train))
-
-        if options.model in ['rf', 'lr', 'ard', 'gp']:
-            logging.info('Training data RMSE: {}, MAE: {}, and R2: {}'.format(rmse_train, mae_train, model.score(X_train, y_train)))
-
+        mae_train = mean_absolute_error(y_train, y_pred_train)
+        rmse_stat_train = math.sqrt(mean_squared_error(y_train, np.full_like(y_train, mean_delay)))
+        skill_train = 1 - rmse_train / rmse_stat_train
+                
+        logging.info('Training data metrics:\nRMSE: {}\nMAE: {}\nR2: {}\nBSS: {}'.format(rmse_train, mae_train, model.score(X_train, y_train),skill_train))
 
         try:
             train.sort_values(by='time', inplace=True)
@@ -326,13 +359,6 @@ def main():
             viz.scatter_predictions(times, y_train_sample, y_pred_sample, savepath=options.output_path, filename=fname)
         except:
             pass
-
-        # Mean delay over the whole dataset (both train and validation),
-        # used to calculate Brier Skill
-        if options.y_avg:
-            mean_delay = 3.375953418071136
-        else:
-            mean_delay = 6.011229358531166
 
         if options.model == 'llasso':
             print('X_test shape: {}'.format(X_test.shape))
@@ -423,6 +449,8 @@ if __name__=='__main__':
 
     parser.add_argument('--config_filename', type=str, default=None, help='Configuration file name')
     parser.add_argument('--config_name', type=str, default=None, help='Configuration file name')
+    parser.add_argument('--starttime', type=str, default=None, help='Data starttime')
+    parser.add_argument('--endtime', type=str, default=None, help='Data endtime')
     parser.add_argument('--dev', type=int, default=0, help='1 for development mode')
 
     parser.add_argument('--logging_level',
